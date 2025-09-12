@@ -9,3 +9,5 @@ LEFT JOIN title_ratings tr ON tb.tconst = tr.tconst
 WHERE nb.primaryname ILIKE 'Chris Hemsworth'
   AND tb.titletype = 'movie'
 ORDER BY tb.startyear;
+
+
