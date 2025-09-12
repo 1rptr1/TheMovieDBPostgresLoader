@@ -23,6 +23,6 @@ jobs:
             sleep 2
           done
 
-      - name: Run Chris Hemsworth Query
-        run: |
-          docker exec -i imdb_postgres psql -U imdb -d imdb -f /queries/chris_hemsworth_movies.sql
+      - name: Run Chris Hemsworth query
+        run: docker exec -i imdb_postgres psql -U imdb -d imdb < queries/chris_hemsworth_movies.sql
+
