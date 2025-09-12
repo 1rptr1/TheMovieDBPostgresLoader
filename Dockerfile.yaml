@@ -15,4 +15,4 @@ wget https://datasets.imdbws.com/title.ratings.tsv.gz && \
 gunzip *.gz
   
   # Copy schema & loader
-COPY data/ /docker-entrypoint-initdb.d/
+COPY ./data/*.sql /docker-entrypoint-initdb.d/
