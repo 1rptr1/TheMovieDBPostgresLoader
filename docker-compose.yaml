@@ -1,0 +1,14 @@
+version: '3.8'
+services:
+  db:
+    build: .
+    container_name: imdb_postgres
+    environment:
+      POSTGRES_USER: BongBongGuy
+      POSTGRES_PASSWORD: guy@123
+      POSTGRES_DB: imdb
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./data:/docker-entrypoint-initdb.d
+      - ./queries:/queries

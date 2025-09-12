@@ -1,0 +1,28 @@
+name: IMDb Loader
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 3 * * *" # daily at 3 AM UTC
+
+jobs:
+  imdb-job:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v4
+
+      - name: Build and Start Postgres
+        run: docker-compose up -d --build db
+
+      - name: Wait for DB
+        run: |
+          until docker exec imdb_postgres pg_isready -U imdb; do
+            echo "Waiting for postgres..."
+            sleep 2
+          done
+
+      - name: Run Chris Hemsworth Query
+        run: |
+          docker exec -i imdb_postgres psql -U imdb -d imdb -f /queries/chris_hemsworth_movies.sql
