@@ -7,6 +7,7 @@ services:
       POSTGRES_USER: BongBongGuy
       POSTGRES_PASSWORD: guy@123
       POSTGRES_DB: imdb
+
     ports:
       - "5432:5432"
     volumes:
