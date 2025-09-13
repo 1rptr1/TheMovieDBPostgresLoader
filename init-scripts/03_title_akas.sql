@@ -41,8 +41,44 @@ BEGIN
                 RAISE NOTICE 'Successfully loaded % rows into title_akas using text format', (SELECT COUNT(*) FROM title_akas);
             EXCEPTION 
                 WHEN OTHERS THEN
-                    RAISE NOTICE 'Failed to load title_akas: %', SQLERRM;
-                    RAISE NOTICE 'Continuing with empty title_akas table...';
+                    RAISE NOTICE 'Text format also failed: %, trying manual parsing...', SQLERRM;
+                    
+                    -- Clear any partial data
+                    TRUNCATE title_akas;
+                    
+                    -- Manual parsing approach for malformed data
+                    BEGIN
+                        DROP TABLE IF EXISTS temp_title_akas;
+                        CREATE TEMP TABLE temp_title_akas (line_data TEXT);
+                        
+                        COPY temp_title_akas FROM '/imdb_data/title.akas.tsv' 
+                        WITH (FORMAT TEXT, ENCODING 'UTF8');
+                        
+                        INSERT INTO title_akas (titleId, ordering, title, region, language, types, attributes, isOriginalTitle)
+                        SELECT 
+                            COALESCE(split_part(line_data, E'\t', 1), '') as titleId,
+                            CASE WHEN split_part(line_data, E'\t', 2) ~ '^[0-9]+$' 
+                                 THEN split_part(line_data, E'\t', 2)::INT 
+                                 ELSE NULL END as ordering,
+                            COALESCE(split_part(line_data, E'\t', 3), '') as title,
+                            COALESCE(split_part(line_data, E'\t', 4), '') as region,
+                            COALESCE(split_part(line_data, E'\t', 5), '') as language,
+                            COALESCE(split_part(line_data, E'\t', 6), '') as types,
+                            COALESCE(split_part(line_data, E'\t', 7), '') as attributes,
+                            COALESCE(split_part(line_data, E'\t', 8), '') as isOriginalTitle
+                        FROM temp_title_akas 
+                        WHERE line_data NOT LIKE 'titleId%'
+                            AND line_data IS NOT NULL 
+                            AND trim(line_data) != ''
+                            AND split_part(line_data, E'\t', 1) LIKE 'tt%';
+                        
+                        DROP TABLE temp_title_akas;
+                        RAISE NOTICE 'Successfully loaded % rows into title_akas using manual parsing', (SELECT COUNT(*) FROM title_akas);
+                    EXCEPTION 
+                        WHEN OTHERS THEN
+                            RAISE NOTICE 'All loading methods failed for title_akas: %', SQLERRM;
+                            RAISE NOTICE 'Continuing with empty title_akas table...';
+                    END;
             END;
     END;
 END $$;
