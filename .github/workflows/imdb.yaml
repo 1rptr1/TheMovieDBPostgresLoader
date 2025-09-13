@@ -33,6 +33,10 @@ jobs:
             echo "Waiting for postgres..."
             sleep 5
           done
+      - name: Debug init directory
+        run: |
+          docker exec imdb_postgres ls -R /docker-entrypoint-initdb.d
+
       - name: Verify tables created and loaded
         run: |
           echo "🔍 Checking tables..."
