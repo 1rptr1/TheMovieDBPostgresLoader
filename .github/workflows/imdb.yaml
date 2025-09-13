@@ -1,28 +1,38 @@
-name: IMDb Loader
+name: IMDb Pipeline
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: "0 3 * * *" # daily at 3 AM UTC
+  push:
+    branches: [ main ]
 
 jobs:
-  imdb-job:
+  imdb:
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout Repo
         uses: actions/checkout@v4
 
-      - name: Build and Start Postgres
-        run: docker compose -f docker-compose.yml -p imdb up -d --build db
+      - name: Download IMDb data
+        run: |
+          mkdir -p data
+          wget -q https://datasets.imdbws.com/name.basics.tsv.gz -O - | gunzip > data/name.basics.tsv
+          wget -q https://datasets.imdbws.com/title.akas.tsv.gz -O - | gunzip > data/title.akas.tsv
+          wget -q https://datasets.imdbws.com/title.basics.tsv.gz -O - | gunzip > data/title.basics.tsv
+          wget -q https://datasets.imdbws.com/title.crew.tsv.gz -O - | gunzip > data/title.crew.tsv
+          wget -q https://datasets.imdbws.com/title.episode.tsv.gz -O - | gunzip > data/title.episode.tsv
+          wget -q https://datasets.imdbws.com/title.principals.tsv.gz -O - | gunzip > data/title.principals.tsv
+          wget -q https://datasets.imdbws.com/title.ratings.tsv.gz -O - | gunzip > data/title.ratings.tsv
 
-      - name: Wait for DB
+      - name: Start Postgres
+        run: docker compose -f docker-compose.yml -p imdb up -d
+
+      - name: Wait for Postgres
         run: |
           until docker exec imdb_postgres pg_isready -U imdb; do
             echo "Waiting for postgres..."
-            sleep 2
+            sleep 5
           done
 
-      - name: Run Chris Hemsworth query
-        run: docker exec -i imdb_postgres psql -U imdb -d imdb < queries/chris_hemsworth_movies.sql
-
+      - name: Run Chris Hemsworth Query
+        run: docker exec -i imdb_postgres psql -U imdb -d imdb -f /docker-entrypoint-initdb.d/../queries/chris_hemsworth_movies.sql
