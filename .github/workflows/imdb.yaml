@@ -36,7 +36,8 @@ jobs:
       - name: Debug init directory
         run: |
           docker exec imdb_postgres ls -R /docker-entrypoint-initdb.d
-
+      - name: Show Postgres logs
+        run: docker logs imdb_postgres
       - name: Verify tables created and loaded
         run: |
           echo "🔍 Checking tables..."
@@ -50,8 +51,9 @@ jobs:
           docker exec -i imdb_postgres psql -U imdb -d imdb -c "SELECT COUNT(*) AS title_crew_count FROM title_crew;" || exit 1
           docker exec -i imdb_postgres psql -U imdb -d imdb -c "SELECT COUNT(*) AS title_episode_count FROM title_episode;" || exit 1
           docker exec -i imdb_postgres psql -U imdb -d imdb -c "SELECT COUNT(*) AS title_ratings_count FROM title_ratings;" || exit 1
-      
 
+      - name: Show Postgres logs
+        run: docker logs imdb_postgres
       - name: Run Chris Hemsworth Query
         run: docker exec -i imdb_postgres psql -U imdb -d imdb -f /docker-entrypoint-initdb.d/../queries/chris_hemsworth_movies.sql
 
