@@ -79,32 +79,52 @@ jobs:
           
           echo "📊 Loading remaining tables that may have timed out during init..."
           
-          # Load title_basics if empty
+          # Load title_basics if empty or partially loaded
           docker exec -i imdb_postgres psql -U imdb -d imdb -c "
             DO \$\$
+            DECLARE
+              current_count INTEGER;
             BEGIN
-              IF (SELECT COUNT(*) FROM title_basics) = 0 THEN
+              SELECT COUNT(*) INTO current_count FROM title_basics;
+              
+              IF current_count = 0 THEN
                 RAISE NOTICE 'Loading title_basics manually...';
                 COPY title_basics FROM '/imdb_data/title.basics.tsv' 
                 WITH (DELIMITER E'\t', HEADER true, NULL '\N', ENCODING 'UTF8');
                 RAISE NOTICE 'Loaded % rows into title_basics', (SELECT COUNT(*) FROM title_basics);
+              ELSIF current_count < 10000000 THEN
+                RAISE NOTICE 'title_basics partially loaded (% rows), clearing and reloading...', current_count;
+                TRUNCATE title_basics;
+                COPY title_basics FROM '/imdb_data/title.basics.tsv' 
+                WITH (DELIMITER E'\t', HEADER true, NULL '\N', ENCODING 'UTF8');
+                RAISE NOTICE 'Reloaded % rows into title_basics', (SELECT COUNT(*) FROM title_basics);
               ELSE
-                RAISE NOTICE 'title_basics already loaded with % rows', (SELECT COUNT(*) FROM title_basics);
+                RAISE NOTICE 'title_basics already fully loaded with % rows', current_count;
               END IF;
             END \$\$;
           "
           
-          # Load title_ratings if empty  
+          # Load title_ratings if empty or partially loaded
           docker exec -i imdb_postgres psql -U imdb -d imdb -c "
             DO \$\$
+            DECLARE
+              current_count INTEGER;
             BEGIN
-              IF (SELECT COUNT(*) FROM title_ratings) = 0 THEN
+              SELECT COUNT(*) INTO current_count FROM title_ratings;
+              
+              IF current_count = 0 THEN
                 RAISE NOTICE 'Loading title_ratings manually...';
                 COPY title_ratings FROM '/imdb_data/title.ratings.tsv' 
                 WITH (DELIMITER E'\t', HEADER true, NULL '\N', ENCODING 'UTF8');
                 RAISE NOTICE 'Loaded % rows into title_ratings', (SELECT COUNT(*) FROM title_ratings);
+              ELSIF current_count < 1500000 THEN
+                RAISE NOTICE 'title_ratings partially loaded (% rows), clearing and reloading...', current_count;
+                TRUNCATE title_ratings;
+                COPY title_ratings FROM '/imdb_data/title.ratings.tsv' 
+                WITH (DELIMITER E'\t', HEADER true, NULL '\N', ENCODING 'UTF8');
+                RAISE NOTICE 'Reloaded % rows into title_ratings', (SELECT COUNT(*) FROM title_ratings);
               ELSE
-                RAISE NOTICE 'title_ratings already loaded with % rows', (SELECT COUNT(*) FROM title_ratings);
+                RAISE NOTICE 'title_ratings already fully loaded with % rows', current_count;
               END IF;
             END \$\$;
           "
