@@ -79,71 +79,45 @@ jobs:
           
           echo "📊 Loading remaining tables that may have timed out during init..."
           
-          # Load title_basics if empty or partially loaded
+          # Load title_basics with forced reload and transaction safety
           docker exec -i imdb_postgres psql -U imdb -d imdb -c "
             DO \$\$
-            DECLARE
-              current_count INTEGER := 0;
-              expected_min INTEGER := 10000000;
             BEGIN
-              -- Always check current row count with error handling
+              -- Always truncate first to avoid duplicate key issues
+              RAISE NOTICE 'Truncating title_basics to ensure clean state...';
+              TRUNCATE title_basics;
+              
+              -- Load with error handling
               BEGIN
-                SELECT COUNT(*) INTO current_count FROM (SELECT 1 FROM title_basics LIMIT expected_min + 1) AS sample;
+                RAISE NOTICE 'Loading title_basics...';
+                COPY title_basics FROM '/imdb_data/title.basics.tsv' 
+                WITH (DELIMITER E'\t', HEADER true, NULL '\N', ENCODING 'UTF8');
+                RAISE NOTICE 'Successfully loaded title_basics with % rows', 
+                  (SELECT COUNT(*) FROM title_basics);
               EXCEPTION WHEN OTHERS THEN
-                -- If count fails, assume table needs reloading
-                current_count := 0;
+                RAISE EXCEPTION 'Failed to load title_basics: %', SQLERRM;
               END;
-              
-              RAISE NOTICE 'title_basics current sample count: %', current_count;
-              
-              IF current_count = 0 THEN
-                RAISE NOTICE 'title_basics appears empty, loading manually...';
-                COPY title_basics FROM '/imdb_data/title.basics.tsv' 
-                WITH (DELIMITER E'\t', HEADER true, NULL '\N', ENCODING 'UTF8');
-                RAISE NOTICE 'Loaded title_basics successfully';
-              ELSIF current_count <= expected_min THEN
-                RAISE NOTICE 'title_basics partially loaded (% rows), clearing and reloading...', current_count;
-                TRUNCATE title_basics;
-                COPY title_basics FROM '/imdb_data/title.basics.tsv' 
-                WITH (DELIMITER E'\t', HEADER true, NULL '\N', ENCODING 'UTF8');
-                RAISE NOTICE 'Reloaded title_basics successfully';
-              ELSE
-                RAISE NOTICE 'title_basics already fully loaded with % rows', current_count;
-              END IF;
             END \$\$;
           "
           
-          # Load title_ratings if empty or partially loaded
+          # Load title_ratings with forced reload and transaction safety
           docker exec -i imdb_postgres psql -U imdb -d imdb -c "
             DO \$\$
-            DECLARE
-              current_count INTEGER := 0;
-              expected_min INTEGER := 1500000;
             BEGIN
-              -- Always check current row count with error handling
+              -- Always truncate first to avoid duplicate key issues
+              RAISE NOTICE 'Truncating title_ratings to ensure clean state...';
+              TRUNCATE title_ratings;
+              
+              -- Load with error handling
               BEGIN
-                SELECT COUNT(*) INTO current_count FROM (SELECT 1 FROM title_ratings LIMIT expected_min + 1) AS sample;
+                RAISE NOTICE 'Loading title_ratings...';
+                COPY title_ratings FROM '/imdb_data/title.ratings.tsv' 
+                WITH (DELIMITER E'\t', HEADER true, NULL '\N', ENCODING 'UTF8');
+                RAISE NOTICE 'Successfully loaded title_ratings with % rows', 
+                  (SELECT COUNT(*) FROM title_ratings);
               EXCEPTION WHEN OTHERS THEN
-                -- If count fails, assume table needs reloading
-                current_count := 0;
+                RAISE EXCEPTION 'Failed to load title_ratings: %', SQLERRM;
               END;
-              
-              RAISE NOTICE 'title_ratings current sample count: %', current_count;
-              
-              IF current_count = 0 THEN
-                RAISE NOTICE 'title_ratings appears empty, loading manually...';
-                COPY title_ratings FROM '/imdb_data/title.ratings.tsv' 
-                WITH (DELIMITER E'\t', HEADER true, NULL '\N', ENCODING 'UTF8');
-                RAISE NOTICE 'Loaded title_ratings successfully';
-              ELSIF current_count <= expected_min THEN
-                RAISE NOTICE 'title_ratings partially loaded (% rows), clearing and reloading...', current_count;
-                TRUNCATE title_ratings;
-                COPY title_ratings FROM '/imdb_data/title.ratings.tsv' 
-                WITH (DELIMITER E'\t', HEADER true, NULL '\N', ENCODING 'UTF8');
-                RAISE NOTICE 'Reloaded title_ratings successfully';
-              ELSE
-                RAISE NOTICE 'title_ratings already fully loaded with % rows', current_count;
-              END IF;
             END \$\$;
           "
           
