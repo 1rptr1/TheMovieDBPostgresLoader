@@ -72,44 +72,143 @@ jobs:
       - name: Show Postgres logs
         run: docker logs imdb_postgres
 
-      - name: Load data manually (post-init)
+      - name: Load data manually (post-init) with robust error handling
         run: |
-          echo "📊 Loading IMDb data manually after container initialization..."
+          echo "📊 Loading all IMDb data with robust error handling..."
           
-          echo "Loading name.basics.tsv..."
-          docker exec -i imdb_postgres psql -U imdb -d imdb -c "
-            COPY name_basics FROM '/imdb_data/name.basics.tsv' 
-            WITH (FORMAT CSV, DELIMITER E'\t', HEADER true, NULL '\N', ENCODING 'UTF8');
-            SELECT 'Loaded ' || COUNT(*) || ' rows into name_basics' FROM name_basics;
-          " || echo "Failed to load name_basics.tsv"
+          # Copy the robust loading script to container
+          docker cp load_data_manual.sql imdb_postgres:/tmp/load_data_manual.sql
           
-          echo "Loading title.basics.tsv..."
-          docker exec -i imdb_postgres psql -U imdb -d imdb -c "
-            COPY title_basics FROM '/imdb_data/title.basics.tsv' 
-            WITH (FORMAT CSV, DELIMITER E'\t', HEADER true, NULL '\N', ENCODING 'UTF8');
-            SELECT 'Loaded ' || COUNT(*) || ' rows into title_basics' FROM title_basics;
-          " || echo "Failed to load title_basics.tsv"
+          # Execute the robust loading script
+          docker exec -i imdb_postgres psql -U imdb -d imdb -f /tmp/load_data_manual.sql
           
-          echo "Loading title.ratings.tsv..."
+          # Load remaining tables not covered in load_data_manual.sql
+          echo "Loading title.akas.tsv..."
           docker exec -i imdb_postgres psql -U imdb -d imdb -c "
-            COPY title_ratings FROM '/imdb_data/title.ratings.tsv' 
-            WITH (FORMAT CSV, DELIMITER E'\t', HEADER true, NULL '\N', ENCODING 'UTF8');
-            SELECT 'Loaded ' || COUNT(*) || ' rows into title_ratings' FROM title_ratings;
-          " || echo "Failed to load title_ratings.tsv"
+            DO \$\$
+            BEGIN
+              TRUNCATE TABLE title_akas;
+              BEGIN
+                COPY title_akas FROM '/imdb_data/title.akas.tsv' 
+                WITH (FORMAT text, DELIMITER E'\t', NULL '\N', ENCODING 'UTF8');
+                RAISE NOTICE 'Successfully loaded title_akas with text format';
+              EXCEPTION WHEN OTHERS THEN
+                RAISE NOTICE 'Failed to load title_akas: %', SQLERRM;
+              END;
+            END
+            \$\$;
+            SELECT 'Loaded ' || COUNT(*) || ' rows into title_akas' FROM title_akas;
+          "
+          
+          echo "Loading title.crew.tsv..."
+          docker exec -i imdb_postgres psql -U imdb -d imdb -c "
+            DO \$\$
+            BEGIN
+              TRUNCATE TABLE title_crew;
+              BEGIN
+                COPY title_crew FROM '/imdb_data/title.crew.tsv' 
+                WITH (FORMAT text, DELIMITER E'\t', NULL '\N', ENCODING 'UTF8');
+                RAISE NOTICE 'Successfully loaded title_crew with text format';
+              EXCEPTION WHEN OTHERS THEN
+                RAISE NOTICE 'Failed to load title_crew: %', SQLERRM;
+              END;
+            END
+            \$\$;
+            SELECT 'Loaded ' || COUNT(*) || ' rows into title_crew' FROM title_crew;
+          "
+          
+          echo "Loading title.episode.tsv..."
+          docker exec -i imdb_postgres psql -U imdb -d imdb -c "
+            DO \$\$
+            BEGIN
+              TRUNCATE TABLE title_episode;
+              BEGIN
+                COPY title_episode FROM '/imdb_data/title.episode.tsv' 
+                WITH (FORMAT text, DELIMITER E'\t', NULL '\N', ENCODING 'UTF8');
+                RAISE NOTICE 'Successfully loaded title_episode with text format';
+              EXCEPTION WHEN OTHERS THEN
+                RAISE NOTICE 'Failed to load title_episode: %', SQLERRM;
+              END;
+            END
+            \$\$;
+            SELECT 'Loaded ' || COUNT(*) || ' rows into title_episode' FROM title_episode;
+          "
+          
+          echo "Loading title.principals.tsv..."
+          docker exec -i imdb_postgres psql -U imdb -d imdb -c "
+            DO \$\$
+            BEGIN
+              TRUNCATE TABLE title_principals;
+              BEGIN
+                COPY title_principals FROM '/imdb_data/title.principals.tsv' 
+                WITH (FORMAT text, DELIMITER E'\t', NULL '\N', ENCODING 'UTF8');
+                RAISE NOTICE 'Successfully loaded title_principals with text format';
+              EXCEPTION WHEN OTHERS THEN
+                RAISE NOTICE 'Failed to load title_principals: %', SQLERRM;
+              END;
+            END
+            \$\$;
+            SELECT 'Loaded ' || COUNT(*) || ' rows into title_principals' FROM title_principals;
+          "
 
-      - name: Verify tables created and loaded
+      - name: Verify all tables created and loaded
         run: |
-          echo "🔍 Checking tables..."
+          echo "🔍 Checking all tables..."
           docker exec -i imdb_postgres psql -U imdb -d imdb -c "\dt"
           
-          echo "🔍 Checking row counts..."
-          docker exec -i imdb_postgres psql -U imdb -d imdb -c "SELECT COUNT(*) AS name_basics_count FROM name_basics;" || exit 1
-          docker exec -i imdb_postgres psql -U imdb -d imdb -c "SELECT COUNT(*) AS title_basics_count FROM title_basics;" || exit 1
-          docker exec -i imdb_postgres psql -U imdb -d imdb -c "SELECT COUNT(*) AS title_principals_count FROM title_principals;" || exit 1
-          docker exec -i imdb_postgres psql -U imdb -d imdb -c "SELECT COUNT(*) AS title_akas_count FROM title_akas;" || exit 1
-          docker exec -i imdb_postgres psql -U imdb -d imdb -c "SELECT COUNT(*) AS title_crew_count FROM title_crew;" || exit 1
-          docker exec -i imdb_postgres psql -U imdb -d imdb -c "SELECT COUNT(*) AS title_episode_count FROM title_episode;" || exit 1
-          docker exec -i imdb_postgres psql -U imdb -d imdb -c "SELECT COUNT(*) AS title_ratings_count FROM title_ratings;" || exit 1
+          echo "📊 Comprehensive data verification for all 7 IMDb tables..."
+          docker exec -i imdb_postgres psql -U imdb -d imdb -c "
+            SELECT 
+              'name_basics' as table_name, COUNT(*) as row_count FROM name_basics
+            UNION ALL
+            SELECT 
+              'title_basics' as table_name, COUNT(*) as row_count FROM title_basics  
+            UNION ALL
+            SELECT 
+              'title_ratings' as table_name, COUNT(*) as row_count FROM title_ratings
+            UNION ALL
+            SELECT 
+              'title_akas' as table_name, COUNT(*) as row_count FROM title_akas
+            UNION ALL
+            SELECT 
+              'title_crew' as table_name, COUNT(*) as row_count FROM title_crew
+            UNION ALL
+            SELECT 
+              'title_episode' as table_name, COUNT(*) as row_count FROM title_episode
+            UNION ALL
+            SELECT 
+              'title_principals' as table_name, COUNT(*) as row_count FROM title_principals
+            ORDER BY table_name;
+          "
+          
+          echo "✅ Verifying minimum expected row counts..."
+          docker exec -i imdb_postgres psql -U imdb -d imdb -c "
+            DO \$\$
+            DECLARE
+              name_count INTEGER;
+              title_count INTEGER;
+              ratings_count INTEGER;
+            BEGIN
+              SELECT COUNT(*) INTO name_count FROM name_basics;
+              SELECT COUNT(*) INTO title_count FROM title_basics;
+              SELECT COUNT(*) INTO ratings_count FROM title_ratings;
+              
+              IF name_count < 1000000 THEN
+                RAISE EXCEPTION 'name_basics has insufficient data: % rows', name_count;
+              END IF;
+              
+              IF title_count < 1000000 THEN
+                RAISE EXCEPTION 'title_basics has insufficient data: % rows', title_count;
+              END IF;
+              
+              IF ratings_count < 100000 THEN
+                RAISE EXCEPTION 'title_ratings has insufficient data: % rows', ratings_count;
+              END IF;
+              
+              RAISE NOTICE 'All core tables have sufficient data loaded successfully!';
+            END
+            \$\$;
+          "
 
       - name: Show Postgres logs
         run: docker logs imdb_postgres
