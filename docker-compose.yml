@@ -12,6 +12,14 @@ services:
       - ./init-scripts:/docker-entrypoint-initdb.d
       - ./queries:/queries
       - ./data:/imdb_data
+      - ./postgresql.conf:/etc/postgresql/postgresql.conf
+    command: ["postgres", "-c", "config_file=/etc/postgresql/postgresql.conf"]
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+        reservations:
+          memory: 2G
     healthcheck:
       test: [ "CMD-SHELL", "pg_isready -U imdb" ]
       interval: 10s

@@ -33,11 +33,14 @@ jobs:
             echo "Waiting for postgres..."
             sleep 5
           done
+
       - name: Debug init directory
         run: |
           docker exec imdb_postgres ls -R /docker-entrypoint-initdb.d
+
       - name: Show Postgres logs
         run: docker logs imdb_postgres
+
       - name: Verify tables created and loaded
         run: |
           echo "🔍 Checking tables..."
@@ -54,9 +57,6 @@ jobs:
 
       - name: Show Postgres logs
         run: docker logs imdb_postgres
-
-      - name: Load IMDb data into Postgres
-        run: docker exec -i imdb_postgres psql -U imdb -d imdb -f /queries/load_data.sql
 
       - name: Run Chris Hemsworth query
         run: docker exec -i imdb_postgres psql -U imdb -d imdb -f /queries/chris_hemsworth_movies.sql
