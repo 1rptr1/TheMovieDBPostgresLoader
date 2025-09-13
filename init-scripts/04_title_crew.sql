@@ -7,11 +7,18 @@ CREATE TABLE IF NOT EXISTS title_crew (
 -- Try to load data, skip gracefully if file doesn't exist
 DO $$
 BEGIN
-    COPY title_crew
-    FROM '/imdb_data/title.crew.tsv'
-    WITH (FORMAT CSV, DELIMITER E'\t', HEADER true, NULL '\N');
-    RAISE NOTICE 'Successfully loaded data from title.crew.tsv';
+    -- Check if file exists first
+    IF EXISTS (SELECT 1 FROM pg_stat_file('/imdb_data/title.crew.tsv')) THEN
+        RAISE NOTICE 'Loading data from title.crew.tsv...';
+        COPY title_crew
+        FROM '/imdb_data/title.crew.tsv'
+        WITH (FORMAT CSV, DELIMITER E'\t', HEADER true, NULL '\N', ENCODING 'UTF8');
+        RAISE NOTICE 'Successfully loaded % rows from title.crew.tsv', (SELECT COUNT(*) FROM title_crew);
+    ELSE
+        RAISE NOTICE 'File title.crew.tsv not found - skipping data load (local development mode)';
+    END IF;
 EXCEPTION
     WHEN OTHERS THEN
-        RAISE NOTICE 'Could not load title.crew.tsv - skipping data load (local development mode): %', SQLERRM;
+        RAISE NOTICE 'Error loading title.crew.tsv: % - continuing with empty table', SQLERRM;
+        -- Continue execution instead of failing
 END $$;
