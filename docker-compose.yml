@@ -9,16 +9,16 @@ services:
     ports:
       - "5432:5432"
     volumes:
-      - ./data:/data
+      # Mount your TSVs here, inside container they’ll be at /imdb_data
+      - ./data:/imdb_data
+
+      # Mount init scripts (including loader.sql)
       - ./init-scripts:/docker-entrypoint-initdb.d
+
+      # Mount queries (for later execution, not auto-run)
       - ./queries:/queries
-      - ./data:/docker-entrypoint-initdb.d/data
-      - ./docker-entrypoint-initdb.d/data:/imdb_data
     healthcheck:
       test: [ "CMD-SHELL", "pg_isready -U imdb" ]
       interval: 10s
       timeout: 5s
       retries: 10
-
-volumes:
-  imdb_data:
