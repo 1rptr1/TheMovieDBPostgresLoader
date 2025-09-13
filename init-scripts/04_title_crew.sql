@@ -5,5 +5,5 @@ CREATE TABLE IF NOT EXISTS title_crew (
 );
 
 COPY title_crew
-FROM '/data/title.crew.tsv'
+FROM '/imdb_data/title.crew.tsv'
 WITH (FORMAT CSV, DELIMITER E'\t', HEADER true, NULL '\N');

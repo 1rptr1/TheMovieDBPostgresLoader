@@ -11,5 +11,5 @@ CREATE TABLE IF NOT EXISTS title_basics (
 );
 
 COPY title_basics
-FROM '/data/title.basics.tsv'
+FROM '/imdb_data/title.basics.tsv'
 WITH (FORMAT CSV, DELIMITER E'\t', HEADER true, NULL '\N');

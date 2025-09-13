@@ -8,5 +8,5 @@ CREATE TABLE IF NOT EXISTS title_principals (
 );
 
 COPY title_principals
-FROM '/data/title.principals.tsv'
+FROM '/imdb_data/title.principals.tsv'
 WITH (FORMAT CSV, DELIMITER E'\t', HEADER true, NULL '\N');

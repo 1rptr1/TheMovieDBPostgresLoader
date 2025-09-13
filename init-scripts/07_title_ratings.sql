@@ -5,5 +5,5 @@ CREATE TABLE IF NOT EXISTS title_ratings (
 );
 
 COPY title_ratings
-FROM '/data/title.ratings.tsv'
+FROM '/imdb_data/title.ratings.tsv'
 WITH (FORMAT CSV, DELIMITER E'\t', HEADER true, NULL '\N');

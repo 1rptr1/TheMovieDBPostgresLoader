@@ -10,5 +10,5 @@ CREATE TABLE IF NOT EXISTS title_akas (
 );
 
 COPY title_akas
-FROM '/data/title.akas.tsv'
+FROM '/imdb_data/title.akas.tsv'
 WITH (FORMAT CSV, DELIMITER E'\t', HEADER true, NULL '\N');

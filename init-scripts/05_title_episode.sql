@@ -6,5 +6,5 @@ CREATE TABLE IF NOT EXISTS title_episode (
 );
 
 COPY title_episode
-FROM '/data/title.episode.tsv'
+FROM '/imdb_data/title.episode.tsv'
 WITH (FORMAT CSV, DELIMITER E'\t', HEADER true, NULL '\N');
