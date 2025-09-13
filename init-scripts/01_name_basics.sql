@@ -10,6 +10,12 @@ CREATE TABLE IF NOT EXISTS name_basics (
 -- Load data with error handling for CSV parsing issues
 DO $$
 BEGIN
+    -- Check if table already has data
+    IF (SELECT COUNT(*) FROM name_basics) > 0 THEN
+        RAISE NOTICE 'name_basics table already contains % rows, skipping data load', (SELECT COUNT(*) FROM name_basics);
+        RETURN;
+    END IF;
+    
     RAISE NOTICE 'Loading data from name.basics.tsv...';
     
     -- Try to load data with QUOTE handling for malformed quotes

@@ -13,6 +13,12 @@ CREATE TABLE IF NOT EXISTS title_basics (
 -- Load data with error handling for missing columns
 DO $$
 BEGIN
+    -- Check if table already has data
+    IF (SELECT COUNT(*) FROM title_basics) > 0 THEN
+        RAISE NOTICE 'title_basics table already contains % rows, skipping data load', (SELECT COUNT(*) FROM title_basics);
+        RETURN;
+    END IF;
+    
     RAISE NOTICE 'Loading data from title.basics.tsv...';
     
     -- Try to load data normally first

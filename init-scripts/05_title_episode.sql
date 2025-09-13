@@ -8,6 +8,12 @@ CREATE TABLE IF NOT EXISTS title_episode (
 -- Load data with error handling for CSV parsing issues
 DO $$
 BEGIN
+    -- Check if table already has data
+    IF (SELECT COUNT(*) FROM title_episode) > 0 THEN
+        RAISE NOTICE 'title_episode table already contains % rows, skipping data load', (SELECT COUNT(*) FROM title_episode);
+        RETURN;
+    END IF;
+    
     RAISE NOTICE 'Loading data from title.episode.tsv...';
     
     -- Try to load data with CSV format first
