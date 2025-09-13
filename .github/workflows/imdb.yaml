@@ -60,25 +60,26 @@ jobs:
         run: |
           for tbl in name_basics title_akas title_crew title_episode title_principals; do
             echo "📊 Loading $tbl..."
-            docker exec -i imdb_postgres psql -U imdb -d imdb -c "\COPY $tbl FROM '/imdb_data/${tbl/\_/.}.tsv' WITH (FORMAT csv, DELIMITER E'\t', HEADER true, NULL '\N')"
+            docker exec -i imdb_postgres psql -U imdb -d imdb -c "\COPY $tbl FROM '/imdb_data/${tbl/\_/.}.tsv' WITH (FORMAT text, DELIMITER E'\t', NULL '\N', HEADER true)"
           done
+
 
       - name: Load large tables with optimized memory usage
         run: |
           echo "⏳ Starting optimized data loading..."
           load_table() {
-            local table=$1
-            local file=$2
-            local sql_script=$(mktemp)
+              local table=$1
+              local file=$2
+              local sql_script=$(mktemp)
           
-            cat > "$sql_script" << EOF
-            \COPY $table FROM '/imdb_data/$file' WITH (FORMAT csv, DELIMITER E'\t', HEADER true, NULL '\N')
-            EOF
-            docker exec -i imdb_postgres psql -U imdb -d imdb -v ON_ERROR_STOP=1 < "$sql_script"
-            local status=$?
-            rm -f "$sql_script"
-            return $status
-          }
+              cat > "$sql_script" << EOF
+              \COPY $table FROM '/imdb_data/$file' WITH (FORMAT text, DELIMITER E'\t', NULL '\N', HEADER true)
+              EOF
+              docker exec -i imdb_postgres psql -U imdb -d imdb -v ON_ERROR_STOP=1 < "$sql_script"
+              local status=$?
+              rm -f "$sql_script"
+              return $status
+            }
 
             load_table "title_basics" "title.basics.tsv" || exit 1
             load_table "title_ratings" "title.ratings.tsv" || exit 1
