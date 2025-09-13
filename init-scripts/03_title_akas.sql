@@ -20,28 +20,16 @@ BEGIN
     
     RAISE NOTICE 'Loading data from title.akas.tsv...';
     
-    -- Try to load data with CSV format first
+    -- Skip CSV format entirely for title_akas due to extra column issues
+    -- Try text format first (more flexible with column count)
     BEGIN
         COPY title_akas FROM '/imdb_data/title.akas.tsv' 
-        WITH (FORMAT CSV, DELIMITER E'\t', HEADER true, NULL '\N', ENCODING 'UTF8');
+        WITH (DELIMITER E'\t', HEADER true, NULL '\N', ENCODING 'UTF8');
         
-        RAISE NOTICE 'Successfully loaded % rows into title_akas', (SELECT COUNT(*) FROM title_akas);
+        RAISE NOTICE 'Successfully loaded % rows into title_akas using text format', (SELECT COUNT(*) FROM title_akas);
     EXCEPTION 
         WHEN OTHERS THEN
-            RAISE NOTICE 'CSV format failed: %, trying text format...', SQLERRM;
-            
-            -- Clear any partial data
-            TRUNCATE title_akas;
-            
-            -- Try without CSV format
-            BEGIN
-                COPY title_akas FROM '/imdb_data/title.akas.tsv' 
-                WITH (DELIMITER E'\t', HEADER true, NULL '\N', ENCODING 'UTF8');
-                
-                RAISE NOTICE 'Successfully loaded % rows into title_akas using text format', (SELECT COUNT(*) FROM title_akas);
-            EXCEPTION 
-                WHEN OTHERS THEN
-                    RAISE NOTICE 'Text format also failed: %, trying manual parsing...', SQLERRM;
+            RAISE NOTICE 'Text format failed: %, trying manual parsing...', SQLERRM;
                     
                     -- Clear any partial data
                     TRUNCATE title_akas;
