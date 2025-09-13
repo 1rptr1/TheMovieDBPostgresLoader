@@ -7,21 +7,34 @@ CREATE TABLE IF NOT EXISTS title_principals (
     characters TEXT
 );
 
--- Try to load data, skip gracefully if file doesn't exist
+-- Load data with error handling for CSV parsing issues
 DO $$
 BEGIN
-    -- Check if file exists first
-    IF EXISTS (SELECT 1 FROM pg_stat_file('/imdb_data/title.principals.tsv')) THEN
-        RAISE NOTICE 'Loading data from title.principals.tsv...';
-        COPY title_principals
-        FROM '/imdb_data/title.principals.tsv'
+    RAISE NOTICE 'Loading data from title.principals.tsv...';
+    
+    -- Try to load data with CSV format first
+    BEGIN
+        COPY title_principals FROM '/imdb_data/title.principals.tsv' 
         WITH (FORMAT CSV, DELIMITER E'\t', HEADER true, NULL '\N', ENCODING 'UTF8');
-        RAISE NOTICE 'Successfully loaded % rows from title.principals.tsv', (SELECT COUNT(*) FROM title_principals);
-    ELSE
-        RAISE NOTICE 'File title.principals.tsv not found - skipping data load (local development mode)';
-    END IF;
-EXCEPTION
-    WHEN OTHERS THEN
-        RAISE NOTICE 'Error loading title.principals.tsv: % - continuing with empty table', SQLERRM;
-        -- Continue execution instead of failing
+        
+        RAISE NOTICE 'Successfully loaded % rows into title_principals', (SELECT COUNT(*) FROM title_principals);
+    EXCEPTION 
+        WHEN OTHERS THEN
+            RAISE NOTICE 'CSV format failed: %, trying text format...', SQLERRM;
+            
+            -- Clear any partial data
+            TRUNCATE title_principals;
+            
+            -- Try without CSV format
+            BEGIN
+                COPY title_principals FROM '/imdb_data/title.principals.tsv' 
+                WITH (DELIMITER E'\t', HEADER true, NULL '\N', ENCODING 'UTF8');
+                
+                RAISE NOTICE 'Successfully loaded % rows into title_principals using text format', (SELECT COUNT(*) FROM title_principals);
+            EXCEPTION 
+                WHEN OTHERS THEN
+                    RAISE NOTICE 'Failed to load title_principals: %', SQLERRM;
+                    RAISE NOTICE 'Continuing with empty title_principals table...';
+            END;
+    END;
 END $$;

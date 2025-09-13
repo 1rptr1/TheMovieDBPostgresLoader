@@ -9,21 +9,34 @@ CREATE TABLE IF NOT EXISTS title_akas (
     isOriginalTitle TEXT
 );
 
--- Try to load data, skip gracefully if file doesn't exist
+-- Load data with error handling for CSV parsing issues
 DO $$
 BEGIN
-    -- Check if file exists first
-    IF EXISTS (SELECT 1 FROM pg_stat_file('/imdb_data/title.akas.tsv')) THEN
-        RAISE NOTICE 'Loading data from title.akas.tsv...';
-        COPY title_akas
-        FROM '/imdb_data/title.akas.tsv'
+    RAISE NOTICE 'Loading data from title.akas.tsv...';
+    
+    -- Try to load data with CSV format first
+    BEGIN
+        COPY title_akas FROM '/imdb_data/title.akas.tsv' 
         WITH (FORMAT CSV, DELIMITER E'\t', HEADER true, NULL '\N', ENCODING 'UTF8');
-        RAISE NOTICE 'Successfully loaded % rows from title.akas.tsv', (SELECT COUNT(*) FROM title_akas);
-    ELSE
-        RAISE NOTICE 'File title.akas.tsv not found - skipping data load (local development mode)';
-    END IF;
-EXCEPTION
-    WHEN OTHERS THEN
-        RAISE NOTICE 'Error loading title.akas.tsv: % - continuing with empty table', SQLERRM;
-        -- Continue execution instead of failing
+        
+        RAISE NOTICE 'Successfully loaded % rows into title_akas', (SELECT COUNT(*) FROM title_akas);
+    EXCEPTION 
+        WHEN OTHERS THEN
+            RAISE NOTICE 'CSV format failed: %, trying text format...', SQLERRM;
+            
+            -- Clear any partial data
+            TRUNCATE title_akas;
+            
+            -- Try without CSV format
+            BEGIN
+                COPY title_akas FROM '/imdb_data/title.akas.tsv' 
+                WITH (DELIMITER E'\t', HEADER true, NULL '\N', ENCODING 'UTF8');
+                
+                RAISE NOTICE 'Successfully loaded % rows into title_akas using text format', (SELECT COUNT(*) FROM title_akas);
+            EXCEPTION 
+                WHEN OTHERS THEN
+                    RAISE NOTICE 'Failed to load title_akas: %', SQLERRM;
+                    RAISE NOTICE 'Continuing with empty title_akas table...';
+            END;
+    END;
 END $$;

@@ -5,21 +5,34 @@ CREATE TABLE IF NOT EXISTS title_episode (
     episodeNumber TEXT
 );
 
--- Try to load data, skip gracefully if file doesn't exist
+-- Load data with error handling for CSV parsing issues
 DO $$
 BEGIN
-    -- Check if file exists first
-    IF EXISTS (SELECT 1 FROM pg_stat_file('/imdb_data/title.episode.tsv')) THEN
-        RAISE NOTICE 'Loading data from title.episode.tsv...';
-        COPY title_episode
-        FROM '/imdb_data/title.episode.tsv'
+    RAISE NOTICE 'Loading data from title.episode.tsv...';
+    
+    -- Try to load data with CSV format first
+    BEGIN
+        COPY title_episode FROM '/imdb_data/title.episode.tsv' 
         WITH (FORMAT CSV, DELIMITER E'\t', HEADER true, NULL '\N', ENCODING 'UTF8');
-        RAISE NOTICE 'Successfully loaded % rows from title.episode.tsv', (SELECT COUNT(*) FROM title_episode);
-    ELSE
-        RAISE NOTICE 'File title.episode.tsv not found - skipping data load (local development mode)';
-    END IF;
-EXCEPTION
-    WHEN OTHERS THEN
-        RAISE NOTICE 'Error loading title.episode.tsv: % - continuing with empty table', SQLERRM;
-        -- Continue execution instead of failing
+        
+        RAISE NOTICE 'Successfully loaded % rows into title_episode', (SELECT COUNT(*) FROM title_episode);
+    EXCEPTION 
+        WHEN OTHERS THEN
+            RAISE NOTICE 'CSV format failed: %, trying text format...', SQLERRM;
+            
+            -- Clear any partial data
+            TRUNCATE title_episode;
+            
+            -- Try without CSV format
+            BEGIN
+                COPY title_episode FROM '/imdb_data/title.episode.tsv' 
+                WITH (DELIMITER E'\t', HEADER true, NULL '\N', ENCODING 'UTF8');
+                
+                RAISE NOTICE 'Successfully loaded % rows into title_episode using text format', (SELECT COUNT(*) FROM title_episode);
+            EXCEPTION 
+                WHEN OTHERS THEN
+                    RAISE NOTICE 'Failed to load title_episode: %', SQLERRM;
+                    RAISE NOTICE 'Continuing with empty title_episode table...';
+            END;
+    END;
 END $$;
