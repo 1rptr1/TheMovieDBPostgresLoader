@@ -59,7 +59,7 @@ CREATE TABLE IF NOT EXISTS title_ratings (
     numVotes INT
 );
 
--- LOAD DATA (COPY FROM IMDb TSVs)
+-- LOAD DATA
 COPY name_basics FROM '/imdb_data/name.basics.tsv' (FORMAT csv, DELIMITER E'\t', HEADER true);
 COPY title_basics FROM '/imdb_data/title.basics.tsv' (FORMAT csv, DELIMITER E'\t', HEADER true);
 COPY title_akas FROM '/imdb_data/title.akas.tsv' (FORMAT csv, DELIMITER E'\t', HEADER true);
