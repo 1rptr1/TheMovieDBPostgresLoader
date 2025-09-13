@@ -33,6 +33,20 @@ jobs:
             echo "Waiting for postgres..."
             sleep 5
           done
+      - name: Verify tables created and loaded
+        run: |
+          echo "🔍 Checking tables..."
+          docker exec -i imdb_postgres psql -U imdb -d imdb -c "\dt"
+          
+          echo "🔍 Checking row counts..."
+          docker exec -i imdb_postgres psql -U imdb -d imdb -c "SELECT COUNT(*) AS name_basics_count FROM name_basics;" || exit 1
+          docker exec -i imdb_postgres psql -U imdb -d imdb -c "SELECT COUNT(*) AS title_basics_count FROM title_basics;" || exit 1
+          docker exec -i imdb_postgres psql -U imdb -d imdb -c "SELECT COUNT(*) AS title_principals_count FROM title_principals;" || exit 1
+          docker exec -i imdb_postgres psql -U imdb -d imdb -c "SELECT COUNT(*) AS title_akas_count FROM title_akas;" || exit 1
+          docker exec -i imdb_postgres psql -U imdb -d imdb -c "SELECT COUNT(*) AS title_crew_count FROM title_crew;" || exit 1
+          docker exec -i imdb_postgres psql -U imdb -d imdb -c "SELECT COUNT(*) AS title_episode_count FROM title_episode;" || exit 1
+          docker exec -i imdb_postgres psql -U imdb -d imdb -c "SELECT COUNT(*) AS title_ratings_count FROM title_ratings;" || exit 1
+      
 
       - name: Run Chris Hemsworth Query
         run: docker exec -i imdb_postgres psql -U imdb -d imdb -f /docker-entrypoint-initdb.d/../queries/chris_hemsworth_movies.sql
