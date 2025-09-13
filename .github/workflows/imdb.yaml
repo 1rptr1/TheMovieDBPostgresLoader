@@ -89,9 +89,29 @@ jobs:
             BEGIN
               TRUNCATE TABLE title_akas;
               BEGIN
-                COPY title_akas FROM '/imdb_data/title.akas.tsv' 
-                WITH (FORMAT text, DELIMITER E'\t', NULL '\N', ENCODING 'UTF8');
-                RAISE NOTICE 'Successfully loaded title_akas with text format';
+                -- Manual parsing to handle header row and type conversions
+                CREATE TEMP TABLE temp_title_akas (raw_line TEXT);
+                COPY temp_title_akas FROM '/imdb_data/title.akas.tsv' WITH (FORMAT text);
+                
+                INSERT INTO title_akas (titleId, ordering, title, region, language, types, attributes, isOriginalTitle)
+                SELECT 
+                  parts[1],
+                  CASE WHEN parts[2] != '\N' AND parts[2] ~ '^[0-9]+$' THEN parts[2]::INTEGER ELSE NULL END,
+                  parts[3],
+                  parts[4],
+                  parts[5],
+                  parts[6],
+                  parts[7],
+                  CASE WHEN parts[8] = '1' THEN true WHEN parts[8] = '0' THEN false ELSE NULL END
+                FROM (
+                  SELECT string_to_array(raw_line, E'\t') as parts 
+                  FROM temp_title_akas 
+                  WHERE raw_line NOT LIKE 'titleId%'
+                ) t
+                WHERE array_length(parts, 1) >= 4;
+                
+                DROP TABLE temp_title_akas;
+                RAISE NOTICE 'Successfully loaded title_akas with manual parsing';
               EXCEPTION WHEN OTHERS THEN
                 RAISE NOTICE 'Failed to load title_akas: %', SQLERRM;
               END;
@@ -140,9 +160,27 @@ jobs:
             BEGIN
               TRUNCATE TABLE title_principals;
               BEGIN
-                COPY title_principals FROM '/imdb_data/title.principals.tsv' 
-                WITH (FORMAT text, DELIMITER E'\t', NULL '\N', ENCODING 'UTF8');
-                RAISE NOTICE 'Successfully loaded title_principals with text format';
+                -- Manual parsing to handle header row and type conversions
+                CREATE TEMP TABLE temp_title_principals (raw_line TEXT);
+                COPY temp_title_principals FROM '/imdb_data/title.principals.tsv' WITH (FORMAT text);
+                
+                INSERT INTO title_principals (tconst, ordering, nconst, category, job, characters)
+                SELECT 
+                  parts[1],
+                  CASE WHEN parts[2] != '\N' AND parts[2] ~ '^[0-9]+$' THEN parts[2]::INTEGER ELSE NULL END,
+                  parts[3],
+                  parts[4],
+                  parts[5],
+                  parts[6]
+                FROM (
+                  SELECT string_to_array(raw_line, E'\t') as parts 
+                  FROM temp_title_principals 
+                  WHERE raw_line NOT LIKE 'tconst%'
+                ) t
+                WHERE array_length(parts, 1) >= 4;
+                
+                DROP TABLE temp_title_principals;
+                RAISE NOTICE 'Successfully loaded title_principals with manual parsing';
               EXCEPTION WHEN OTHERS THEN
                 RAISE NOTICE 'Failed to load title_principals: %', SQLERRM;
               END;
