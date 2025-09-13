@@ -1,21 +1,15 @@
--- Manual IMDb data loading with three-tier error handling
--- This script handles CSV parsing errors gracefully
+-- Manual IMDb data loading with optimized error handling
+-- This script handles CSV parsing errors gracefully by using text format first
 
--- Load name_basics with error handling
+-- Load name_basics with error handling (handles unterminated CSV quoted fields)
 DO $$
 BEGIN
   -- Clear existing data first
   TRUNCATE TABLE name_basics;
   
-  -- Tier 1: Try CSV format first
+  -- Check if file exists first
   BEGIN
-    COPY name_basics FROM '/imdb_data/name.basics.tsv' 
-    WITH (FORMAT CSV, DELIMITER E'\t', HEADER true, NULL '\N', ENCODING 'UTF8');
-    RAISE NOTICE 'Successfully loaded name_basics with CSV format';
-  EXCEPTION WHEN OTHERS THEN
-    RAISE NOTICE 'CSV format failed: %, trying text format...', SQLERRM;
-    
-    -- Tier 2: Try text format fallback
+    -- Try text format first to bypass CSV parsing issues with quotes
     BEGIN
       COPY name_basics FROM '/imdb_data/name.basics.tsv' 
       WITH (FORMAT text, DELIMITER E'\t', NULL '\N', ENCODING 'UTF8');
@@ -23,17 +17,17 @@ BEGIN
     EXCEPTION WHEN OTHERS THEN
       RAISE NOTICE 'Text format failed: %, trying manual parsing...', SQLERRM;
       
-      -- Tier 3: Manual parsing with temporary table
+      -- Fallback to manual parsing with temporary table
       BEGIN
         CREATE TEMP TABLE temp_name_basics (raw_line TEXT);
         COPY temp_name_basics FROM '/imdb_data/name.basics.tsv' WITH (FORMAT text);
         
         INSERT INTO name_basics (nconst, primaryName, birthYear, deathYear, primaryProfession, knownForTitles)
         SELECT 
-          CASE WHEN array_length(parts, 1) >= 1 THEN parts[1] ELSE NULL END,
-          CASE WHEN array_length(parts, 1) >= 2 THEN parts[2] ELSE NULL END,
-          CASE WHEN array_length(parts, 1) >= 3 AND parts[3] != '\N' THEN parts[3]::INTEGER ELSE NULL END,
-          CASE WHEN array_length(parts, 1) >= 4 AND parts[4] != '\N' THEN parts[4]::INTEGER ELSE NULL END,
+          parts[1],
+          parts[2],
+          CASE WHEN parts[3] != '\N' THEN parts[3]::INTEGER ELSE NULL END,
+          CASE WHEN parts[4] != '\N' THEN parts[4]::INTEGER ELSE NULL END,
           CASE WHEN array_length(parts, 1) >= 5 THEN parts[5] ELSE NULL END,
           CASE WHEN array_length(parts, 1) >= 6 THEN parts[6] ELSE NULL END
         FROM (
@@ -41,7 +35,7 @@ BEGIN
           FROM temp_name_basics 
           WHERE raw_line NOT LIKE 'nconst%'
         ) t
-        WHERE array_length(parts, 1) >= 2;
+        WHERE array_length(parts, 1) >= 4;
         
         DROP TABLE temp_name_basics;
         RAISE NOTICE 'Successfully loaded name_basics with manual parsing';
@@ -49,25 +43,21 @@ BEGIN
         RAISE NOTICE 'Manual parsing failed: %', SQLERRM;
       END;
     END;
+  EXCEPTION WHEN OTHERS THEN
+    RAISE NOTICE 'File not found or accessible: %', SQLERRM;
   END;
 END
 $$;
 
--- Load title_basics with error handling
+-- Load title_basics with error handling (handles missing column data)
 DO $$
 BEGIN
   -- Clear existing data first
   TRUNCATE TABLE title_basics;
   
-  -- Tier 1: Try CSV format first
+  -- Check if file exists first
   BEGIN
-    COPY title_basics FROM '/imdb_data/title.basics.tsv' 
-    WITH (FORMAT CSV, DELIMITER E'\t', HEADER true, NULL '\N', ENCODING 'UTF8');
-    RAISE NOTICE 'Successfully loaded title_basics with CSV format';
-  EXCEPTION WHEN OTHERS THEN
-    RAISE NOTICE 'CSV format failed: %, trying text format...', SQLERRM;
-    
-    -- Tier 2: Try text format fallback
+    -- Try text format first to bypass CSV parsing issues with missing columns
     BEGIN
       COPY title_basics FROM '/imdb_data/title.basics.tsv' 
       WITH (FORMAT text, DELIMITER E'\t', NULL '\N', ENCODING 'UTF8');
@@ -75,17 +65,17 @@ BEGIN
     EXCEPTION WHEN OTHERS THEN
       RAISE NOTICE 'Text format failed: %, trying manual parsing...', SQLERRM;
       
-      -- Tier 3: Manual parsing with temporary table
+      -- Fallback to manual parsing with flexible column handling
       BEGIN
         CREATE TEMP TABLE temp_title_basics (raw_line TEXT);
         COPY temp_title_basics FROM '/imdb_data/title.basics.tsv' WITH (FORMAT text);
         
         INSERT INTO title_basics (tconst, titleType, primaryTitle, originalTitle, isAdult, startYear, endYear, runtimeMinutes, genres)
         SELECT 
-          CASE WHEN array_length(parts, 1) >= 1 THEN parts[1] ELSE NULL END,
-          CASE WHEN array_length(parts, 1) >= 2 THEN parts[2] ELSE NULL END,
-          CASE WHEN array_length(parts, 1) >= 3 THEN parts[3] ELSE NULL END,
-          CASE WHEN array_length(parts, 1) >= 4 THEN parts[4] ELSE NULL END,
+          parts[1],
+          parts[2],
+          parts[3],
+          parts[4],
           CASE WHEN array_length(parts, 1) >= 5 AND parts[5] != '\N' THEN parts[5]::INTEGER ELSE NULL END,
           CASE WHEN array_length(parts, 1) >= 6 AND parts[6] != '\N' THEN parts[6]::INTEGER ELSE NULL END,
           CASE WHEN array_length(parts, 1) >= 7 AND parts[7] != '\N' THEN parts[7]::INTEGER ELSE NULL END,
@@ -104,22 +94,34 @@ BEGIN
         RAISE NOTICE 'Manual parsing failed: %', SQLERRM;
       END;
     END;
+  EXCEPTION WHEN OTHERS THEN
+    RAISE NOTICE 'File not found or accessible: %', SQLERRM;
   END;
 END
 $$;
 
--- Load title_ratings (this one usually works fine)
+-- Load title_ratings (usually works with CSV format)
 DO $$
 BEGIN
   -- Clear existing data first
   TRUNCATE TABLE title_ratings;
   
   BEGIN
+    -- Try CSV format first (this usually works for title_ratings)
     COPY title_ratings FROM '/imdb_data/title.ratings.tsv' 
     WITH (FORMAT CSV, DELIMITER E'\t', HEADER true, NULL '\N', ENCODING 'UTF8');
-    RAISE NOTICE 'Successfully loaded title_ratings';
+    RAISE NOTICE 'Successfully loaded title_ratings with CSV format';
   EXCEPTION WHEN OTHERS THEN
-    RAISE NOTICE 'Failed to load title_ratings: %', SQLERRM;
+    RAISE NOTICE 'CSV format failed: %, trying text format...', SQLERRM;
+    
+    -- Fallback to text format
+    BEGIN
+      COPY title_ratings FROM '/imdb_data/title.ratings.tsv' 
+      WITH (FORMAT text, DELIMITER E'\t', NULL '\N', ENCODING 'UTF8');
+      RAISE NOTICE 'Successfully loaded title_ratings with text format';
+    EXCEPTION WHEN OTHERS THEN
+      RAISE NOTICE 'Failed to load title_ratings: %', SQLERRM;
+    END;
   END;
 END
 $$;
