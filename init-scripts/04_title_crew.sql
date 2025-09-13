@@ -1,73 +1,51 @@
-CREATE TABLE IF NOT EXISTS title_crew (
-    tconst TEXT PRIMARY KEY,
-    directors TEXT,
-    writers TEXT
+-- 04_title_episode.sql
+CREATE TABLE IF NOT EXISTS title_episode (
+    tconst TEXT,
+    parentTconst TEXT,
+    seasonNumber INT,
+    episodeNumber INT
 );
 
--- Load data with error handling for CSV parsing issues
 DO $$
+DECLARE
+    batch_size INT := 500000;
+    offset_val INT := 0;
+    total_rows BIGINT;
 BEGIN
-    -- Check if table already has data
-    IF (SELECT COUNT(*) FROM title_crew) > 0 THEN
-        RAISE NOTICE 'title_crew table already contains % rows, skipping data load', (SELECT COUNT(*) FROM title_crew);
+    -- Skip if already loaded
+    IF (SELECT COUNT(*) FROM title_episode) > 0 THEN
+        RAISE NOTICE 'title_episode already contains % rows, skipping load', (SELECT COUNT(*) FROM title_episode);
         RETURN;
     END IF;
-    
-    RAISE NOTICE 'Loading data from title.crew.tsv...';
-    
-    -- Skip CSV format entirely for title_crew due to parsing issues
-    -- Try text format first (more flexible)
-    BEGIN
-        COPY title_crew FROM '/imdb_data/title.crew.tsv' 
-        WITH (DELIMITER E'\t', HEADER true, NULL '\N', ENCODING 'UTF8');
-        
-        RAISE NOTICE 'Successfully loaded % rows into title_crew using text format', (SELECT COUNT(*) FROM title_crew);
-    EXCEPTION 
-        WHEN OTHERS THEN
-            RAISE NOTICE 'Text format failed: %, trying manual parsing...', SQLERRM;
-            
-            -- Clear any partial data
-            TRUNCATE title_crew;
-            
-            -- Try without CSV format
-            BEGIN
-                COPY title_crew FROM '/imdb_data/title.crew.tsv' 
-                WITH (DELIMITER E'\t', HEADER true, NULL '\N', ENCODING 'UTF8');
-                
-                RAISE NOTICE 'Successfully loaded % rows into title_crew using text format', (SELECT COUNT(*) FROM title_crew);
-            EXCEPTION 
-                WHEN OTHERS THEN
-                    RAISE NOTICE 'Text format also failed: %, trying manual parsing...', SQLERRM;
-                    
-                    -- Clear any partial data
-                    TRUNCATE title_crew;
-                    
-                    -- Manual parsing approach for malformed data
-                    BEGIN
-                        DROP TABLE IF EXISTS temp_title_crew;
-                        CREATE TEMP TABLE temp_title_crew (line_data TEXT);
-                        
-                        COPY temp_title_crew FROM '/imdb_data/title.crew.tsv' 
-                        WITH (FORMAT TEXT, ENCODING 'UTF8');
-                        
-                        INSERT INTO title_crew (tconst, directors, writers)
-                        SELECT 
-                            COALESCE(split_part(line_data, E'\t', 1), '') as tconst,
-                            COALESCE(split_part(line_data, E'\t', 2), '') as directors,
-                            COALESCE(split_part(line_data, E'\t', 3), '') as writers
-                        FROM temp_title_crew 
-                        WHERE line_data NOT LIKE 'tconst%'
-                            AND line_data IS NOT NULL 
-                            AND trim(line_data) != ''
-                            AND split_part(line_data, E'\t', 1) LIKE 'tt%';
-                        
-                        DROP TABLE temp_title_crew;
-                        RAISE NOTICE 'Successfully loaded % rows into title_crew using manual parsing', (SELECT COUNT(*) FROM title_crew);
-                    EXCEPTION 
-                        WHEN OTHERS THEN
-                            RAISE NOTICE 'All loading methods failed for title_crew: %', SQLERRM;
-                            RAISE NOTICE 'Continuing with empty title_crew table...';
-                    END;
-            END;
-    END;
+
+    RAISE NOTICE 'Loading data from title.episode.tsv in batches of % rows...', batch_size;
+
+    CREATE TEMP TABLE temp_episode (LIKE title_episode);
+
+    COPY temp_episode
+    FROM '/imdb_data/title.episode.tsv'
+    WITH (FORMAT text, DELIMITER E'\t', NULL '\N', HEADER true, ENCODING 'UTF8');
+
+    LOOP
+        INSERT INTO title_episode
+        SELECT * FROM temp_episode
+        WHERE ctid IN (
+            SELECT ctid FROM temp_episode
+            LIMIT batch_size OFFSET offset_val
+        );
+
+        GET DIAGNOSTICS total_rows = ROW_COUNT;
+
+        EXIT WHEN total_rows = 0;
+
+        offset_val := offset_val + batch_size;
+        RAISE NOTICE 'Inserted batch ending at row %', offset_val;
+        COMMIT;  -- free memory
+        BEGIN;   -- start new transaction
+    END LOOP;
+
+    DROP TABLE temp_episode;
+
+    RAISE NOTICE 'Finished loading % rows into title_episode',
+        (SELECT COUNT(*) FROM title_episode);
 END $$;
