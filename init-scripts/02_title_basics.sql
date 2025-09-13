@@ -22,10 +22,16 @@ BEGIN
     RAISE NOTICE 'Loading data from title.basics.tsv...';
     
     -- Skip CSV format entirely for title_basics due to parsing issues
-    -- Try text format first (more flexible)
+    -- Try text format first (more flexible) with timeout handling
     BEGIN
+        -- Set statement timeout to prevent hanging
+        SET statement_timeout = '300s';
+        
         COPY title_basics FROM '/imdb_data/title.basics.tsv' 
         WITH (DELIMITER E'\t', HEADER true, NULL '\N', ENCODING 'UTF8');
+        
+        -- Reset timeout
+        SET statement_timeout = 0;
         
         RAISE NOTICE 'Successfully loaded % rows into title_basics using text format', (SELECT COUNT(*) FROM title_basics);
     EXCEPTION 

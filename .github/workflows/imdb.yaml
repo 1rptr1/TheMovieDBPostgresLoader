@@ -72,11 +72,44 @@ jobs:
       - name: Show Postgres logs
         run: docker logs imdb_postgres
 
-      - name: Wait for init scripts to complete data loading
+      - name: Wait for init scripts and load remaining data manually
         run: |
-          echo "⏳ Waiting for init scripts to complete data loading..."
-          sleep 30
-          echo "✅ Init scripts should have completed data loading"
+          echo "⏳ Waiting for init scripts to complete..."
+          sleep 60
+          
+          echo "📊 Loading remaining tables that may have timed out during init..."
+          
+          # Load title_basics if empty
+          docker exec -i imdb_postgres psql -U imdb -d imdb -c "
+            DO \$\$
+            BEGIN
+              IF (SELECT COUNT(*) FROM title_basics) = 0 THEN
+                RAISE NOTICE 'Loading title_basics manually...';
+                COPY title_basics FROM '/imdb_data/title.basics.tsv' 
+                WITH (DELIMITER E'\t', HEADER true, NULL '\N', ENCODING 'UTF8');
+                RAISE NOTICE 'Loaded % rows into title_basics', (SELECT COUNT(*) FROM title_basics);
+              ELSE
+                RAISE NOTICE 'title_basics already loaded with % rows', (SELECT COUNT(*) FROM title_basics);
+              END IF;
+            END \$\$;
+          "
+          
+          # Load title_ratings if empty  
+          docker exec -i imdb_postgres psql -U imdb -d imdb -c "
+            DO \$\$
+            BEGIN
+              IF (SELECT COUNT(*) FROM title_ratings) = 0 THEN
+                RAISE NOTICE 'Loading title_ratings manually...';
+                COPY title_ratings FROM '/imdb_data/title.ratings.tsv' 
+                WITH (DELIMITER E'\t', HEADER true, NULL '\N', ENCODING 'UTF8');
+                RAISE NOTICE 'Loaded % rows into title_ratings', (SELECT COUNT(*) FROM title_ratings);
+              ELSE
+                RAISE NOTICE 'title_ratings already loaded with % rows', (SELECT COUNT(*) FROM title_ratings);
+              END IF;
+            END \$\$;
+          "
+          
+          echo "✅ Data loading completed"
 
       - name: Verify all tables created and loaded
         run: |
