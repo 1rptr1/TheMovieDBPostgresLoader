@@ -42,8 +42,48 @@ BEGIN
                 RAISE NOTICE 'Successfully loaded % rows into title_basics using text format', (SELECT COUNT(*) FROM title_basics);
             EXCEPTION 
                 WHEN OTHERS THEN
-                    RAISE NOTICE 'Failed to load title_basics: %', SQLERRM;
-                    RAISE NOTICE 'Continuing with empty title_basics table...';
+                RAISE NOTICE 'Text format also failed: %, trying with temporary table approach...', SQLERRM;
+                
+                -- Clear any partial data
+                TRUNCATE title_basics;
+                
+                -- Create temporary table with all text columns to handle variable column counts
+                BEGIN
+                    DROP TABLE IF EXISTS temp_title_basics;
+                    CREATE TEMP TABLE temp_title_basics (
+                        line_data TEXT
+                    );
+                    
+                    -- Load raw lines first
+                    COPY temp_title_basics FROM '/imdb_data/title.basics.tsv' 
+                    WITH (FORMAT TEXT, ENCODING 'UTF8');
+                    
+                    -- Parse and insert valid rows only
+                    INSERT INTO title_basics (tconst, titleType, primaryTitle, originalTitle, isAdult, startYear, endYear, runtimeMinutes, genres)
+                    SELECT 
+                        COALESCE(split_part(line_data, E'\t', 1), '') as tconst,
+                        COALESCE(split_part(line_data, E'\t', 2), '') as titleType,
+                        COALESCE(split_part(line_data, E'\t', 3), '') as primaryTitle,
+                        COALESCE(split_part(line_data, E'\t', 4), '') as originalTitle,
+                        COALESCE(split_part(line_data, E'\t', 5), '') as isAdult,
+                        COALESCE(split_part(line_data, E'\t', 6), '') as startYear,
+                        COALESCE(split_part(line_data, E'\t', 7), '') as endYear,
+                        COALESCE(split_part(line_data, E'\t', 8), '') as runtimeMinutes,
+                        COALESCE(split_part(line_data, E'\t', 9), '') as genres
+                    FROM temp_title_basics 
+                    WHERE line_data NOT LIKE 'tconst%'  -- Skip header
+                        AND line_data IS NOT NULL 
+                        AND trim(line_data) != ''
+                        AND split_part(line_data, E'\t', 1) LIKE 'tt%';  -- Valid tconst format
+                    
+                    DROP TABLE temp_title_basics;
+                    
+                    RAISE NOTICE 'Successfully loaded % rows into title_basics using manual parsing', (SELECT COUNT(*) FROM title_basics);
+                EXCEPTION 
+                    WHEN OTHERS THEN
+                        RAISE NOTICE 'All loading methods failed for title_basics: %', SQLERRM;
+                        RAISE NOTICE 'Continuing with empty title_basics table...';
+                END;
             END;
     END;
 END $$;
