@@ -72,54 +72,90 @@ jobs:
       - name: Show Postgres logs
         run: docker logs imdb_postgres
 
-      - name: Wait for init scripts and load remaining data manually
+      - name: Load large tables with optimized memory usage
         run: |
-          echo "⏳ Waiting for init scripts to complete..."
-          sleep 60
+          echo "⏳ Starting optimized data loading..."
           
-          echo "📊 Loading remaining tables that may have timed out during init..."
-          
-          # Load title_basics with forced reload and transaction safety
-          docker exec -i imdb_postgres psql -U imdb -d imdb -c "
+          # Function to load table in batches
+          load_table() {
+            local table=$1
+            local file=$2
+            local batch_size=500000  # Process 500K rows at a time
+            
+            echo "📊 Loading $table in batches of $batch_size..."
+            
+            # Create a temporary file for the SQL script
+            local sql_script=$(mktemp)
+            
+            cat > "$sql_script" << EOF
             DO \$\$
+            DECLARE
+              total_rows BIGINT;
+              batch_count INT := 0;
+              start_time TIMESTAMP;
             BEGIN
-              -- Always truncate first to avoid duplicate key issues
-              RAISE NOTICE 'Truncating title_basics to ensure clean state...';
-              TRUNCATE title_basics;
+              -- Start timing
+              start_time := clock_timestamp();
               
-              -- Load with error handling
-              BEGIN
-                RAISE NOTICE 'Loading title_basics...';
-                COPY title_basics FROM '/imdb_data/title.basics.tsv' 
-                WITH (DELIMITER E'\t', HEADER true, NULL '\N', ENCODING 'UTF8');
-                RAISE NOTICE 'Successfully loaded title_basics with % rows', 
-                  (SELECT COUNT(*) FROM title_basics);
-              EXCEPTION WHEN OTHERS THEN
-                RAISE EXCEPTION 'Failed to load title_basics: %', SQLERRM;
-              END;
+              -- Truncate target table
+              EXECUTE format('TRUNCATE %I', '$table');
+              RAISE NOTICE 'Truncated %', '$table';
+              
+              -- Create temporary table for loading
+              EXECUTE format('CREATE TEMP TABLE temp_batch (LIKE %I)', '$table');
+              
+              -- Load data into temp table
+              RAISE NOTICE 'Loading data into temp table...';
+              EXECUTE format('COPY temp_batch FROM ''/imdb_data/%s'' 
+                            WITH (DELIMITER E''\t'', HEADER true, NULL ''\N'', ENCODING ''UTF8'')', 
+                            '$file');
+              
+              -- Process in batches
+              LOOP
+                EXECUTE format('INSERT INTO %I SELECT * FROM temp_batch 
+                              WHERE ctid IN (SELECT ctid FROM temp_batch LIMIT %s OFFSET %s)',
+                              '$table', $batch_size, batch_count * $batch_size);
+                
+                GET DIAGNOSTICS total_rows = ROW_COUNT;
+                EXIT WHEN total_rows = 0;
+                
+                batch_count := batch_count + 1;
+                RAISE NOTICE 'Processed batch %: % rows', batch_count, total_rows;
+                
+                -- Commit each batch to free memory
+                COMMIT;
+                BEGIN  -- Start a new transaction for the next batch
+              END LOOP;
+              
+              -- Get final row count
+              EXECUTE format('SELECT COUNT(*) FROM %I', '$table') INTO total_rows;
+              
+              -- Clean up
+              DROP TABLE temp_batch;
+              
+              RAISE NOTICE 'Successfully loaded % rows into % in % seconds', 
+                          total_rows, '$table', 
+                          EXTRACT(EPOCH FROM (clock_timestamp() - start_time));
+            EXCEPTION WHEN OTHERS THEN
+              RAISE EXCEPTION 'Failed to load %: %', '$table', SQLERRM;
             END \$\$;
-          "
+            EOF
+            
+            # Execute the SQL script
+            docker exec -i imdb_postgres psql -U imdb -d imdb -v ON_ERROR_STOP=1 < "$sql_script"
+            local status=$?
+            
+            # Clean up
+            rm -f "$sql_script"
+            
+            return $status
+          }
           
-          # Load title_ratings with forced reload and transaction safety
-          docker exec -i imdb_postgres psql -U imdb -d imdb -c "
-            DO \$\$
-            BEGIN
-              -- Always truncate first to avoid duplicate key issues
-              RAISE NOTICE 'Truncating title_ratings to ensure clean state...';
-              TRUNCATE title_ratings;
-              
-              -- Load with error handling
-              BEGIN
-                RAISE NOTICE 'Loading title_ratings...';
-                COPY title_ratings FROM '/imdb_data/title.ratings.tsv' 
-                WITH (DELIMITER E'\t', HEADER true, NULL '\N', ENCODING 'UTF8');
-                RAISE NOTICE 'Successfully loaded title_ratings with % rows', 
-                  (SELECT COUNT(*) FROM title_ratings);
-              EXCEPTION WHEN OTHERS THEN
-                RAISE EXCEPTION 'Failed to load title_ratings: %', SQLERRM;
-              END;
-            END \$\$;
-          "
+          # Load title_basics in batches
+          load_table "title_basics" "title.basics.tsv" || exit 1
+          
+          # Load title_ratings in batches
+          load_table "title_ratings" "title.ratings.tsv" || exit 1
           
           echo "✅ Data loading completed"
 
