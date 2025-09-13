@@ -1,12 +1,12 @@
 -- Find all movies with Chris Hemsworth
 -- This query adapts based on available data
 
--- Data Status Check
+-- Data Status Check (lightweight)
 SELECT 
     'Data Status Check:' as info,
-    (SELECT COUNT(*) FROM name_basics) as name_basics_count,
-    (SELECT COUNT(*) FROM title_basics) as title_basics_count,
-    (SELECT COUNT(*) FROM title_principals) as title_principals_count;
+    CASE WHEN EXISTS(SELECT 1 FROM name_basics LIMIT 1) THEN 'HAS_DATA' ELSE 'EMPTY' END as name_basics_status,
+    CASE WHEN EXISTS(SELECT 1 FROM title_basics LIMIT 1) THEN 'HAS_DATA' ELSE 'EMPTY' END as title_basics_status,
+    CASE WHEN EXISTS(SELECT 1 FROM title_principals LIMIT 1) THEN 'HAS_DATA' ELSE 'EMPTY' END as title_principals_status;
 
 -- Chris Hemsworth Basic Info (Always works)
 SELECT 
@@ -22,7 +22,7 @@ WHERE primaryName ILIKE '%Chris Hemsworth%';
 -- Full Movie Query (Only if all tables have data)
 DO $$
 BEGIN
-    IF (SELECT COUNT(*) FROM title_basics) > 0 AND (SELECT COUNT(*) FROM title_principals) > 0 THEN
+    IF EXISTS(SELECT 1 FROM title_basics LIMIT 1) AND EXISTS(SELECT 1 FROM title_principals LIMIT 1) THEN
         RAISE NOTICE 'Running full Chris Hemsworth movie query...';
         
         -- This would be executed as a separate query:
@@ -35,9 +35,7 @@ BEGIN
         -- ORDER BY tb.startYear DESC;
         
     ELSE
-        RAISE NOTICE 'Full movie data not available. title_basics: %, title_principals: %', 
-            (SELECT COUNT(*) FROM title_basics), 
-            (SELECT COUNT(*) FROM title_principals);
+        RAISE NOTICE 'Full movie data not available. Using lightweight check instead of COUNT queries.';
     END IF;
 END $$;
 
