@@ -18,19 +18,12 @@ jobs:
           mkdir -p data
           echo "📥 Downloading IMDb data files..."
           wget -q https://datasets.imdbws.com/name.basics.tsv.gz -O - | gunzip > data/name.basics.tsv
-          echo "✅ Downloaded name.basics.tsv ($(wc -l < data/name.basics.tsv) lines)"
           wget -q https://datasets.imdbws.com/title.akas.tsv.gz -O - | gunzip > data/title.akas.tsv
-          echo "✅ Downloaded title.akas.tsv ($(wc -l < data/title.akas.tsv) lines)"
           wget -q https://datasets.imdbws.com/title.basics.tsv.gz -O - | gunzip > data/title.basics.tsv
-          echo "✅ Downloaded title.basics.tsv ($(wc -l < data/title.basics.tsv) lines)"
           wget -q https://datasets.imdbws.com/title.crew.tsv.gz -O - | gunzip > data/title.crew.tsv
-          echo "✅ Downloaded title.crew.tsv ($(wc -l < data/title.crew.tsv) lines)"
           wget -q https://datasets.imdbws.com/title.episode.tsv.gz -O - | gunzip > data/title.episode.tsv
-          echo "✅ Downloaded title.episode.tsv ($(wc -l < data/title.episode.tsv) lines)"
           wget -q https://datasets.imdbws.com/title.principals.tsv.gz -O - | gunzip > data/title.principals.tsv
-          echo "✅ Downloaded title.principals.tsv ($(wc -l < data/title.principals.tsv) lines)"
           wget -q https://datasets.imdbws.com/title.ratings.tsv.gz -O - | gunzip > data/title.ratings.tsv
-          echo "✅ Downloaded title.ratings.tsv ($(wc -l < data/title.ratings.tsv) lines)"
           echo "📊 All data files downloaded successfully!"
           ls -la data/
 
@@ -60,145 +53,70 @@ jobs:
             sleep 5
           done
 
-      - name: Debug directories
-        run: |
-          echo "🔍 Checking init scripts directory:"
-          docker exec imdb_postgres ls -R /docker-entrypoint-initdb.d
-          echo "🔍 Checking data directory:"
-          docker exec imdb_postgres ls -la /imdb_data/ || echo "❌ /imdb_data directory not found"
-          echo "🔍 Checking data file sizes:"
-          docker exec imdb_postgres sh -c 'for file in /imdb_data/*.tsv; do [ -f "$file" ] && echo "$(basename "$file"): $(wc -l < "$file") lines" || echo "$(basename "$file"): not found"; done' || echo "❌ No data files found"
+      - name: Initialize Schema
+        run: docker exec -i imdb_postgres psql -U imdb -d imdb -f /docker-entrypoint-initdb.d/00_schema.sql
 
-      - name: Show Postgres logs
-        run: docker logs imdb_postgres
+      - name: Load smaller tables directly
+        run: |
+          for tbl in name_basics title_akas title_crew title_episode title_principals; do
+            echo "📊 Loading $tbl..."
+            docker exec -i imdb_postgres psql -U imdb -d imdb -c "\COPY $tbl FROM '/imdb_data/${tbl/\_/.}.tsv' WITH (FORMAT csv, DELIMITER E'\t', HEADER true, NULL '\N')"
+          done
 
       - name: Load large tables with optimized memory usage
         run: |
           echo "⏳ Starting optimized data loading..."
-          
-          # Function to load table in batches
           load_table() {
             local table=$1
             local file=$2
-            local batch_size=500000  # Process 500K rows at a time
-            
-            echo "📊 Loading $table in batches of $batch_size..."
-            
-            # Create a temporary file for the SQL script
             local sql_script=$(mktemp)
-            
+          
             cat > "$sql_script" << EOF
-            DO \$\$
-            DECLARE
-              total_rows BIGINT;
-              batch_count INT := 0;
-              start_time TIMESTAMP;
-            BEGIN
-              -- Start timing
-              start_time := clock_timestamp();
-              
-              -- Truncate target table
-              EXECUTE format('TRUNCATE %I', '$table');
-              RAISE NOTICE 'Truncated %', '$table';
-              
-              -- Create temporary table for loading
-              EXECUTE format('CREATE TEMP TABLE temp_batch (LIKE %I)', '$table');
-              
-              -- Load data into temp table
-              RAISE NOTICE 'Loading data into temp table...';
-              EXECUTE format('COPY temp_batch FROM ''/imdb_data/%s'' 
-                            WITH (DELIMITER E''\t'', HEADER true, NULL ''\N'', ENCODING ''UTF8'')', 
-                            '$file');
-              
-              -- Process in batches
-              LOOP
-                EXECUTE format('INSERT INTO %I SELECT * FROM temp_batch 
-                              WHERE ctid IN (SELECT ctid FROM temp_batch LIMIT %s OFFSET %s)',
-                              '$table', $batch_size, batch_count * $batch_size);
-                
-                GET DIAGNOSTICS total_rows = ROW_COUNT;
-                EXIT WHEN total_rows = 0;
-                
-                batch_count := batch_count + 1;
-                RAISE NOTICE 'Processed batch %: % rows', batch_count, total_rows;
-                
-                -- Commit each batch to free memory
-                COMMIT;
-                BEGIN  -- Start a new transaction for the next batch
-              END LOOP;
-              
-              -- Get final row count
-              EXECUTE format('SELECT COUNT(*) FROM %I', '$table') INTO total_rows;
-              
-              -- Clean up
-              DROP TABLE temp_batch;
-              
-              RAISE NOTICE 'Successfully loaded % rows into % in % seconds', 
-                          total_rows, '$table', 
-                          EXTRACT(EPOCH FROM (clock_timestamp() - start_time));
-            EXCEPTION WHEN OTHERS THEN
-              RAISE EXCEPTION 'Failed to load %: %', '$table', SQLERRM;
-            END \$\$;
+            \COPY $table FROM '/imdb_data/$file' WITH (FORMAT csv, DELIMITER E'\t', HEADER true, NULL '\N')
             EOF
-            
-            # Execute the SQL script
             docker exec -i imdb_postgres psql -U imdb -d imdb -v ON_ERROR_STOP=1 < "$sql_script"
             local status=$?
-            
-            # Clean up
             rm -f "$sql_script"
-            
             return $status
           }
-          
-          # Load title_basics in batches
-          load_table "title_basics" "title.basics.tsv" || exit 1
-          
-          # Load title_ratings in batches
-          load_table "title_ratings" "title.ratings.tsv" || exit 1
-          
-          echo "✅ Data loading completed"
+
+            load_table "title_basics" "title.basics.tsv" || exit 1
+            load_table "title_ratings" "title.ratings.tsv" || exit 1
+            echo "✅ Data loading completed"
 
       - name: Verify all tables created and loaded
         run: |
           echo "🔍 Checking all tables..."
           docker exec -i imdb_postgres psql -U imdb -d imdb -c "\dt"
           
-          echo "📊 Comprehensive data verification for all 7 IMDb tables..."
+          echo "📊 Row counts for all IMDb tables..."
           docker exec -i imdb_postgres psql -U imdb -d imdb -c "
-            SELECT 
-              'name_basics' as table_name, COUNT(*) as row_count FROM name_basics
+            SELECT 'name_basics' as table_name, COUNT(*) as row_count FROM name_basics
             UNION ALL
-            SELECT 
-              'title_basics' as table_name, COUNT(*) as row_count FROM title_basics  
+            SELECT 'title_basics', COUNT(*) FROM title_basics
             UNION ALL
-            SELECT 
-              'title_ratings' as table_name, COUNT(*) as row_count FROM title_ratings
+            SELECT 'title_ratings', COUNT(*) FROM title_ratings
             UNION ALL
-            SELECT 
-              'title_akas' as table_name, COUNT(*) as row_count FROM title_akas
+            SELECT 'title_akas', COUNT(*) FROM title_akas
             UNION ALL
-            SELECT 
-              'title_crew' as table_name, COUNT(*) as row_count FROM title_crew
+            SELECT 'title_crew', COUNT(*) FROM title_crew
             UNION ALL
-            SELECT 
-              'title_episode' as table_name, COUNT(*) as row_count FROM title_episode
+            SELECT 'title_episode', COUNT(*) FROM title_episode
             UNION ALL
-            SELECT 
-              'title_principals' as table_name, COUNT(*) as row_count FROM title_principals
+            SELECT 'title_principals', COUNT(*) FROM title_principals
             ORDER BY table_name;
           "
-          
-          echo "✅ Quick verification check..."
-          docker exec -i imdb_postgres psql -U imdb -d imdb -c "
-            SELECT 'name_basics' as table_name, 
-                   CASE WHEN EXISTS(SELECT 1 FROM name_basics LIMIT 1) THEN 'HAS_DATA' ELSE 'EMPTY' END as status;
-          "
-          
-          echo "✅ Data loading verification completed successfully!"
 
       - name: Show Postgres logs
         run: docker logs imdb_postgres
 
       - name: Run Chris Hemsworth query
         run: docker exec -i imdb_postgres psql -U imdb -d imdb -f /queries/chris_hemsworth_movies.sql
+
+      - name: Debug failure (if any)
+        if: failure()
+        run: |
+          echo "🔍 Last 100 lines of Postgres logs:"
+          docker logs --tail=100 imdb_postgres
+          echo "🔍 Checking /imdb_data:"
+          docker exec imdb_postgres ls -lh /imdb_data/ || echo "❌ Data dir missing"

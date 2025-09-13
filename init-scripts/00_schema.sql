@@ -1,4 +1,6 @@
 -- SCHEMA DEFINITIONS
+-- This file only defines tables (no COPY commands here)
+-- Data will be loaded manually via /queries/load_data_manual.sql
 
 CREATE TABLE IF NOT EXISTS name_basics (
     nconst TEXT PRIMARY KEY,
