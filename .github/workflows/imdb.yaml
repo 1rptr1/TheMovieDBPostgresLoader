@@ -72,6 +72,31 @@ jobs:
       - name: Show Postgres logs
         run: docker logs imdb_postgres
 
+      - name: Load data manually (post-init)
+        run: |
+          echo "📊 Loading IMDb data manually after container initialization..."
+          
+          echo "Loading name.basics.tsv..."
+          docker exec -i imdb_postgres psql -U imdb -d imdb -c "
+            COPY name_basics FROM '/imdb_data/name.basics.tsv' 
+            WITH (FORMAT CSV, DELIMITER E'\t', HEADER true, NULL '\N', ENCODING 'UTF8');
+            SELECT 'Loaded ' || COUNT(*) || ' rows into name_basics' FROM name_basics;
+          " || echo "Failed to load name_basics.tsv"
+          
+          echo "Loading title.basics.tsv..."
+          docker exec -i imdb_postgres psql -U imdb -d imdb -c "
+            COPY title_basics FROM '/imdb_data/title.basics.tsv' 
+            WITH (FORMAT CSV, DELIMITER E'\t', HEADER true, NULL '\N', ENCODING 'UTF8');
+            SELECT 'Loaded ' || COUNT(*) || ' rows into title_basics' FROM title_basics;
+          " || echo "Failed to load title_basics.tsv"
+          
+          echo "Loading title.ratings.tsv..."
+          docker exec -i imdb_postgres psql -U imdb -d imdb -c "
+            COPY title_ratings FROM '/imdb_data/title.ratings.tsv' 
+            WITH (FORMAT CSV, DELIMITER E'\t', HEADER true, NULL '\N', ENCODING 'UTF8');
+            SELECT 'Loaded ' || COUNT(*) || ' rows into title_ratings' FROM title_ratings;
+          " || echo "Failed to load title_ratings.tsv"
+
       - name: Verify tables created and loaded
         run: |
           echo "🔍 Checking tables..."
