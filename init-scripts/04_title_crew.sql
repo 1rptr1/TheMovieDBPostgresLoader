@@ -1,11 +1,3 @@
--- 04_title_episode.sql
-CREATE TABLE IF NOT EXISTS title_episode (
-    tconst TEXT,
-    parentTconst TEXT,
-    seasonNumber INT,
-    episodeNumber INT
-);
-
 DO $$
 DECLARE
     batch_size INT := 500000;
@@ -40,8 +32,7 @@ BEGIN
 
         offset_val := offset_val + batch_size;
         RAISE NOTICE 'Inserted batch ending at row %', offset_val;
-        COMMIT;  -- free memory
-        BEGIN;   -- start new transaction
+        -- ❌ removed COMMIT / BEGIN, not allowed inside DO
     END LOOP;
 
     DROP TABLE temp_episode;
