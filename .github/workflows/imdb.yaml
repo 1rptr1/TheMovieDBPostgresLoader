@@ -16,15 +16,41 @@ jobs:
       - name: Download IMDb data
         run: |
           mkdir -p data
+          echo "📥 Downloading IMDb data files..."
           wget -q https://datasets.imdbws.com/name.basics.tsv.gz -O - | gunzip > data/name.basics.tsv
+          echo "✅ Downloaded name.basics.tsv ($(wc -l < data/name.basics.tsv) lines)"
           wget -q https://datasets.imdbws.com/title.akas.tsv.gz -O - | gunzip > data/title.akas.tsv
+          echo "✅ Downloaded title.akas.tsv ($(wc -l < data/title.akas.tsv) lines)"
           wget -q https://datasets.imdbws.com/title.basics.tsv.gz -O - | gunzip > data/title.basics.tsv
+          echo "✅ Downloaded title.basics.tsv ($(wc -l < data/title.basics.tsv) lines)"
           wget -q https://datasets.imdbws.com/title.crew.tsv.gz -O - | gunzip > data/title.crew.tsv
+          echo "✅ Downloaded title.crew.tsv ($(wc -l < data/title.crew.tsv) lines)"
           wget -q https://datasets.imdbws.com/title.episode.tsv.gz -O - | gunzip > data/title.episode.tsv
+          echo "✅ Downloaded title.episode.tsv ($(wc -l < data/title.episode.tsv) lines)"
           wget -q https://datasets.imdbws.com/title.principals.tsv.gz -O - | gunzip > data/title.principals.tsv
+          echo "✅ Downloaded title.principals.tsv ($(wc -l < data/title.principals.tsv) lines)"
           wget -q https://datasets.imdbws.com/title.ratings.tsv.gz -O - | gunzip > data/title.ratings.tsv
+          echo "✅ Downloaded title.ratings.tsv ($(wc -l < data/title.ratings.tsv) lines)"
+          echo "📊 All data files downloaded successfully!"
+          ls -la data/
 
-      - name: Start Postgres
+      - name: Verify data files before starting container
+        run: |
+          echo "🔍 Verifying downloaded data files..."
+          ls -la data/
+          echo "📊 Data file sizes:"
+          for file in data/*.tsv; do
+            if [ -f "$file" ]; then
+              echo "$(basename "$file"): $(wc -l < "$file") lines, $(du -h "$file" | cut -f1)"
+            fi
+          done
+
+      - name: Clean up any existing containers
+        run: |
+          docker compose -f docker-compose.yml -p imdb down -v || true
+          docker system prune -f || true
+
+      - name: Start Postgres with fresh container
         run: docker compose -f docker-compose.yml -p imdb up -d
 
       - name: Wait for Postgres
@@ -34,9 +60,14 @@ jobs:
             sleep 5
           done
 
-      - name: Debug init directory
+      - name: Debug directories
         run: |
+          echo "🔍 Checking init scripts directory:"
           docker exec imdb_postgres ls -R /docker-entrypoint-initdb.d
+          echo "🔍 Checking data directory:"
+          docker exec imdb_postgres ls -la /imdb_data/ || echo "❌ /imdb_data directory not found"
+          echo "🔍 Checking data file sizes:"
+          docker exec imdb_postgres sh -c 'for file in /imdb_data/*.tsv; do [ -f "$file" ] && echo "$(basename "$file"): $(wc -l < "$file") lines" || echo "$(basename "$file"): not found"; done' || echo "❌ No data files found"
 
       - name: Show Postgres logs
         run: docker logs imdb_postgres
