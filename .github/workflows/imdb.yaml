@@ -36,3 +36,9 @@ jobs:
 
       - name: Run Chris Hemsworth Query
         run: docker exec -i imdb_postgres psql -U imdb -d imdb -f /docker-entrypoint-initdb.d/../queries/chris_hemsworth_movies.sql
+
+      - name: Copy query into container
+        run: docker cp queries/chris_hemsworth_movies.sql imdb_postgres:/chris_hemsworth_movies.sql
+
+      - name: Run query
+        run: docker exec -i imdb_postgres psql -U imdb -d imdb -f /chris_hemsworth_movies.sql
