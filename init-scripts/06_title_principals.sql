@@ -18,15 +18,16 @@ BEGIN
     
     RAISE NOTICE 'Loading data from title.principals.tsv...';
     
-    -- Try to load data with CSV format first
+    -- Skip CSV format entirely for title_principals due to parsing issues
+    -- Try text format first (more flexible)
     BEGIN
         COPY title_principals FROM '/imdb_data/title.principals.tsv' 
-        WITH (FORMAT CSV, DELIMITER E'\t', HEADER true, NULL '\N', ENCODING 'UTF8');
+        WITH (DELIMITER E'\t', HEADER true, NULL '\N', ENCODING 'UTF8');
         
-        RAISE NOTICE 'Successfully loaded % rows into title_principals', (SELECT COUNT(*) FROM title_principals);
+        RAISE NOTICE 'Successfully loaded % rows into title_principals using text format', (SELECT COUNT(*) FROM title_principals);
     EXCEPTION 
         WHEN OTHERS THEN
-            RAISE NOTICE 'CSV format failed: %, trying text format...', SQLERRM;
+            RAISE NOTICE 'Text format failed: %, trying manual parsing...', SQLERRM;
             
             -- Clear any partial data
             TRUNCATE title_principals;
