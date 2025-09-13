@@ -102,13 +102,13 @@ jobs:
                   parts[5],
                   parts[6],
                   parts[7],
-                  CASE WHEN parts[8] = '1' THEN true WHEN parts[8] = '0' THEN false ELSE NULL END
+                  CASE WHEN array_length(parts, 1) >= 8 THEN parts[8] ELSE NULL END
                 FROM (
                   SELECT string_to_array(raw_line, E'\t') as parts 
                   FROM temp_title_akas 
                   WHERE raw_line NOT LIKE 'titleId%'
                 ) t
-                WHERE array_length(parts, 1) >= 4;
+                WHERE array_length(parts, 1) >= 8;
                 
                 DROP TABLE temp_title_akas;
                 RAISE NOTICE 'Successfully loaded title_akas with manual parsing';
@@ -177,7 +177,7 @@ jobs:
                   FROM temp_title_principals 
                   WHERE raw_line NOT LIKE 'tconst%'
                 ) t
-                WHERE array_length(parts, 1) >= 4;
+                WHERE array_length(parts, 1) >= 6;
                 
                 DROP TABLE temp_title_principals;
                 RAISE NOTICE 'Successfully loaded title_principals with manual parsing';
