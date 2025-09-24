@@ -41,7 +41,7 @@ jobs:
           ls -lh data/
 
       - name: Initialize Schema
-        run: psql -h localhost -U imdb -d imdb -f schema/00_schema.sql
+        run: psql -h localhost -U imdb -d imdb -f ./sql/00_schema.sql
         env:
           PGPASSWORD: imdb
 
