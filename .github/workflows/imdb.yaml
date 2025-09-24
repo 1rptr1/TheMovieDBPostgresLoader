@@ -6,133 +6,71 @@ on:
 jobs:
   imdb:
     runs-on: ubuntu-latest
-    container:
-      image: catthehacker/ubuntu:full-latest
+
+    services:
+      postgres:
+        image: postgres:15
+        ports:
+          - 5432:5432
+        env:
+          POSTGRES_USER: imdb
+          POSTGRES_PASSWORD: imdb
+          POSTGRES_DB: imdb
+        options: >-
+          --health-cmd="pg_isready -U imdb -d imdb"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
     steps:
       - name: Checkout Repo
         uses: actions/checkout@v4
 
-      - name: Free disk space (safe for local act)
-        run: |
-          echo "Before cleanup:"
-          df -h
-          # Make cleanup non-fatal
-          rm -rf /usr/share/dotnet || true
-          rm -rf /opt/ghc || true
-          rm -rf /usr/local/lib/android || true
-          rm -rf /usr/local/share/boost || true
-          echo "After cleanup:"
-          df -h
-
       - name: Install dependencies
         run: |
-          apt-get update
-          sudo apt-get install -y wget postgresql-client
-          sudo apt-get install -y wget curl gzip
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends wget curl postgresql-client gzip
+          sudo rm -rf /var/lib/apt/lists/*
+
       - name: Download IMDb data
         run: |
           mkdir -p data
-          echo "📥 Downloading IMDb data files..."
-          wget -q https://datasets.imdbws.com/name.basics.tsv.gz -O - | gunzip > data/name.basics.tsv
-          wget -q https://datasets.imdbws.com/title.akas.tsv.gz -O - | gunzip > data/title.akas.tsv
-          wget -q https://datasets.imdbws.com/title.basics.tsv.gz -O - | gunzip > data/title.basics.tsv
-          wget -q https://datasets.imdbws.com/title.crew.tsv.gz -O - | gunzip > data/title.crew.tsv
-          wget -q https://datasets.imdbws.com/title.episode.tsv.gz -O - | gunzip > data/title.episode.tsv
-          wget -q https://datasets.imdbws.com/title.principals.tsv.gz -O - | gunzip > data/title.principals.tsv
-          wget -q https://datasets.imdbws.com/title.ratings.tsv.gz -O - | gunzip > data/title.ratings.tsv
-          echo "📊 All data files downloaded successfully!"
-          ls -la data/
-
-      - name: Verify data files
-        run: |
-          echo "🔍 Verifying downloaded data files..."
-          ls -la data/
-          echo "📊 Data file sizes:"
-          for file in data/*.tsv; do
-            if [ -f "$file" ]; then
-              echo "$(basename "$file"): $(wc -l < "$file") lines, $(du -h "$file" | cut -f1)"
-            fi
+          for file in name.basics title.akas title.basics title.crew title.episode title.principals title.ratings; do
+            wget -q "https://datasets.imdbws.com/$file.tsv.gz" -O - | gunzip > "data/$file.tsv"
           done
-
-      - name: Clean up any existing containers
-        run: |
-          docker compose -f docker-compose.yml -p imdb down -v || true
-          docker system prune -f || true
-
-      - name: Start Postgres container
-        run: docker compose -f docker-compose.yml -p imdb up -d
-
-      - name: Wait for Postgres
-        run: |
-          until docker exec imdb_postgres pg_isready -U imdb; do
-            echo "Waiting for postgres..."
-            sleep 5
-          done
+          ls -lh data/
 
       - name: Initialize Schema
-        run: docker exec -i imdb_postgres psql -U imdb -d imdb -f /docker-entrypoint-initdb.d/00_schema.sql
+        run: psql -h localhost -U imdb -d imdb -f schema/00_schema.sql
+        env:
+          PGPASSWORD: imdb
 
-      - name: Load smaller tables
+      - name: Load tables
         run: |
-          for tbl in name_basics title_akas title_crew title_episode title_principals; do
+          for file in data/*.tsv; do
+            tbl=$(basename "$file" .tsv | tr '.' '_')
             echo "📊 Loading $tbl..."
-            docker exec -i imdb_postgres psql -U imdb -d imdb -c "\COPY $tbl FROM '/imdb_data/${tbl/\_/.}.tsv' WITH (FORMAT text, DELIMITER E'\t', NULL '\N', HEADER true)"
+            psql -h localhost -U imdb -d imdb -c "\COPY $tbl FROM '$file' WITH (FORMAT text, DELIMITER E'\t', NULL '\N', HEADER true)"
           done
-
-      - name: Load large tables
-        run: |
-          echo "⏳ Starting optimized data loading..."
-          load_table() {
-              local table=$1
-              local file=$2
-              local sql_script=$(mktemp)
-          
-              cat > "$sql_script" << EOF
-              \COPY $table FROM '/imdb_data/$file' WITH (FORMAT text, DELIMITER E'\t', NULL '\N', HEADER true)
-              EOF
-              docker exec -i imdb_postgres psql -U imdb -d imdb -v ON_ERROR_STOP=1 < "$sql_script"
-              local status=$?
-              rm -f "$sql_script"
-              return $status
-              }
-          
-              load_table "title_basics" "title.basics.tsv" || exit 1
-              load_table "title_ratings" "title.ratings.tsv" || exit 1
-              echo "✅ Data loading completed"
+        env:
+          PGPASSWORD: imdb
 
       - name: Verify tables
         run: |
-          echo "🔍 Checking all tables..."
-          docker exec -i imdb_postgres psql -U imdb -d imdb -c "\dt"
-          
-          echo "📊 Row counts for all IMDb tables..."
-          docker exec -i imdb_postgres psql -U imdb -d imdb -c "
-            SELECT 'name_basics' as table_name, COUNT(*) as row_count FROM name_basics
-            UNION ALL
-            SELECT 'title_basics', COUNT(*) FROM title_basics
-            UNION ALL
-            SELECT 'title_ratings', COUNT(*) FROM title_ratings
-            UNION ALL
-            SELECT 'title_akas', COUNT(*) FROM title_akas
-            UNION ALL
-            SELECT 'title_crew', COUNT(*) FROM title_crew
-            UNION ALL
-            SELECT 'title_episode', COUNT(*) FROM title_episode
-            UNION ALL
-            SELECT 'title_principals', COUNT(*) FROM title_principals
+          psql -h localhost -U imdb -d imdb -c "\dt"
+          psql -h localhost -U imdb -d imdb -c "
+            SELECT table_name, row_estimate
+            FROM (
+              SELECT relname as table_name, reltuples::bigint as row_estimate
+              FROM pg_class WHERE relkind='r'
+            ) est
+            WHERE table_name IN ('name_basics','title_basics','title_ratings','title_akas','title_crew','title_episode','title_principals')
             ORDER BY table_name;
           "
-
-      - name: Show Postgres logs
-        run: docker logs imdb_postgres
+        env:
+          PGPASSWORD: imdb
 
       - name: Run Chris Hemsworth query
-        run: docker exec -i imdb_postgres psql -U imdb -d imdb -f /queries/chris_hemsworth_movies.sql
-
-      - name: Debug failure (if any)
-        if: failure()
-        run: |
-          echo "🔍 Last 100 lines of Postgres logs:"
-          docker logs --tail=100 imdb_postgres
-          echo "🔍 Checking /imdb_data:"
-          docker exec imdb_postgres ls -lh /imdb_data/ || echo "❌ Data dir missing"
+        run: psql -h localhost -U imdb -d imdb -f queries/chris_hemsworth_movies.sql
+        env:
+          PGPASSWORD: imdb
