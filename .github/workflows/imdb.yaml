@@ -6,23 +6,29 @@ on:
 jobs:
   imdb:
     runs-on: ubuntu-latest
-
+    container:
+      image: catthehacker/ubuntu:full-latest
     steps:
-      - name: Free disk space
-        run: |
-          echo "Before cleanup:"
-          df -h
-          sudo rm -rf /usr/share/dotnet
-          sudo rm -rf /opt/ghc
-          sudo rm -rf /usr/local/lib/android
-          sudo rm -rf /usr/local/share/boost
-          sudo rm -rf "$AGENT_TOOLSDIRECTORY"
-          echo "After cleanup:"
-          df -h
-
       - name: Checkout Repo
         uses: actions/checkout@v4
 
+      - name: Free disk space (safe for local act)
+        run: |
+          echo "Before cleanup:"
+          df -h
+          # Make cleanup non-fatal
+          rm -rf /usr/share/dotnet || true
+          rm -rf /opt/ghc || true
+          rm -rf /usr/local/lib/android || true
+          rm -rf /usr/local/share/boost || true
+          echo "After cleanup:"
+          df -h
+
+      - name: Install dependencies
+        run: |
+          apt-get update
+          sudo apt-get install -y wget postgresql-client
+          sudo apt-get install -y wget curl gzip
       - name: Download IMDb data
         run: |
           mkdir -p data
@@ -37,7 +43,7 @@ jobs:
           echo "📊 All data files downloaded successfully!"
           ls -la data/
 
-      - name: Verify data files before starting container
+      - name: Verify data files
         run: |
           echo "🔍 Verifying downloaded data files..."
           ls -la data/
@@ -53,7 +59,7 @@ jobs:
           docker compose -f docker-compose.yml -p imdb down -v || true
           docker system prune -f || true
 
-      - name: Start Postgres with fresh container
+      - name: Start Postgres container
         run: docker compose -f docker-compose.yml -p imdb up -d
 
       - name: Wait for Postgres
@@ -66,15 +72,14 @@ jobs:
       - name: Initialize Schema
         run: docker exec -i imdb_postgres psql -U imdb -d imdb -f /docker-entrypoint-initdb.d/00_schema.sql
 
-      - name: Load smaller tables directly
+      - name: Load smaller tables
         run: |
           for tbl in name_basics title_akas title_crew title_episode title_principals; do
             echo "📊 Loading $tbl..."
             docker exec -i imdb_postgres psql -U imdb -d imdb -c "\COPY $tbl FROM '/imdb_data/${tbl/\_/.}.tsv' WITH (FORMAT text, DELIMITER E'\t', NULL '\N', HEADER true)"
           done
 
-
-      - name: Load large tables with optimized memory usage
+      - name: Load large tables
         run: |
           echo "⏳ Starting optimized data loading..."
           load_table() {
@@ -89,13 +94,13 @@ jobs:
               local status=$?
               rm -f "$sql_script"
               return $status
-            }
+              }
+          
+              load_table "title_basics" "title.basics.tsv" || exit 1
+              load_table "title_ratings" "title.ratings.tsv" || exit 1
+              echo "✅ Data loading completed"
 
-            load_table "title_basics" "title.basics.tsv" || exit 1
-            load_table "title_ratings" "title.ratings.tsv" || exit 1
-            echo "✅ Data loading completed"
-
-      - name: Verify all tables created and loaded
+      - name: Verify tables
         run: |
           echo "🔍 Checking all tables..."
           docker exec -i imdb_postgres psql -U imdb -d imdb -c "\dt"
