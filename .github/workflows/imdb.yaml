@@ -55,6 +55,12 @@ jobs:
         env:
           PGPASSWORD: imdb
 
+      - name: Analyze tables
+        run: |
+          psql -h localhost -U imdb -d imdb -c "VACUUM ANALYZE;"
+        env:
+          PGPASSWORD: imdb
+
       - name: Verify tables
         run: |
           psql -h localhost -U imdb -d imdb -c "\dt"
